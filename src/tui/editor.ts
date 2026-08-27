@@ -1,13 +1,8 @@
 import {
   BoxRenderable,
-  MarkdownRenderable,
-  ScrollBoxRenderable,
-  StyledText,
-  SyntaxStyle,
   TextRenderable,
   TextareaRenderable,
   createCliRenderer,
-  fg,
   type KeyEvent,
   type RenderContext,
 } from "@opentui/core"
@@ -18,16 +13,47 @@ import type { Transaction } from "../document/model.js"
 import { SessionServer } from "../session/ipc.js"
 import { DocumentLock } from "../session/paths.js"
 import { DocumentService } from "../session/service.js"
-import { CommandOverlay, PromptOverlay, errorOverlay, type Command } from "./overlay.js"
-import { editorTheme, type EditorTheme } from "./theme.js"
+import { editorTheme } from "./theme.js"
 
 type EditorCallbacks = {
   quit: () => void
-  commands: () => void
-  save: () => void
   undo: () => void
   redo: () => void
-  closeOverlay: () => boolean
+}
+
+export const EXIT_CONFIRMATION_TIMEOUT_MS = 2_000
+
+export class ExitConfirmation {
+  private timer: ReturnType<typeof setTimeout> | null = null
+
+  constructor(
+    private readonly onArmedChange: (armed: boolean) => void,
+    private readonly onConfirm: () => void,
+    private readonly timeoutMs = EXIT_CONFIRMATION_TIMEOUT_MS,
+  ) {}
+
+  request(): void {
+    if (this.timer !== null) {
+      clearTimeout(this.timer)
+      this.timer = null
+      this.onArmedChange(false)
+      this.onConfirm()
+      return
+    }
+
+    this.onArmedChange(true)
+    this.timer = setTimeout(() => {
+      this.timer = null
+      this.onArmedChange(false)
+    }, this.timeoutMs)
+  }
+
+  cancel(): void {
+    if (this.timer === null) return
+    clearTimeout(this.timer)
+    this.timer = null
+    this.onArmedChange(false)
+  }
 }
 
 export class DocumentTextarea extends TextareaRenderable {
@@ -45,17 +71,8 @@ export class DocumentTextarea extends TextareaRenderable {
     if (kill) return kill()
     this.continuingKill = false
 
-    if (name === "escape" && this.callbacks?.closeOverlay()) return true
     if (key.ctrl && name === "c") {
       this.callbacks?.quit()
-      return true
-    }
-    if (key.ctrl && name === "s") {
-      this.callbacks?.save()
-      return true
-    }
-    if (key.meta && name === "x") {
-      this.callbacks?.commands()
       return true
     }
     if ((key.ctrl && (name === "-" || name === "_")) || (key.super && name === "z" && !key.shift)) {
@@ -255,6 +272,7 @@ export async function runEditor(inputPath: string): Promise<void> {
   })
   const session = new SessionServer(service, lock)
   let renderer: Awaited<ReturnType<typeof createCliRenderer>> | null = null
+  let exitConfirmation: ExitConfirmation | null = null
 
   try {
     await session.start()
@@ -276,23 +294,55 @@ export async function runEditor(inputPath: string): Promise<void> {
       backgroundColor: theme.background,
     })
     let syncing = false
-    let overlay: BoxRenderable | null = null
-    let preview: ScrollBoxRenderable | null = null
-    let errorBox: BoxRenderable | null = null
     let done: () => void = () => {}
     let closing = false
     let syncEditorText: () => void = () => {}
-    let reportSaveError: (message: string) => void = () => {}
+    let exitArmed = false
+    let errorMessage: string | null = null
+    const noticeBox = new BoxRenderable(renderer, {
+      id: "notice",
+      position: "absolute",
+      left: 0,
+      bottom: 0,
+      width: "100%",
+      height: 1,
+      zIndex: 100,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: theme.background,
+      visible: false,
+    })
+    const noticeText = new TextRenderable(renderer, {
+      content: "",
+      width: "auto",
+      height: 1,
+      fg: theme.primary,
+      bg: theme.background,
+      selectable: false,
+      truncate: true,
+    })
+    noticeBox.add(noticeText)
+    const refreshNotice = (): void => {
+      const message = exitArmed ? "press ctrl+c again to exit" : errorMessage
+      noticeText.content = message ?? ""
+      noticeText.fg = exitArmed ? theme.primary : theme.error
+      noticeBox.visible = message !== null
+    }
+    const reportError = (message: string): void => {
+      errorMessage = message
+      refreshNotice()
+    }
     const finished = new Promise<void>((resolve) => {
       done = resolve
     })
     const finish = () => {
       if (closing) return
+      exitConfirmation?.cancel()
       syncEditorText()
       try {
         service.flush()
       } catch (error) {
-        reportSaveError(error instanceof Error ? error.message : String(error))
+        reportError(`save failed — ${error instanceof Error ? error.message : String(error)}`)
         return
       }
       closing = true
@@ -340,49 +390,6 @@ export async function runEditor(inputPath: string): Promise<void> {
       }
     }
 
-    const closeOverlay = (): boolean => {
-      if (preview) {
-        root.remove(preview)
-        preview.destroyRecursively()
-        preview = null
-        root.add(editor)
-        editor.focus()
-        return true
-      }
-      if (!overlay) return false
-      root.remove(overlay)
-      overlay.destroyRecursively()
-      overlay = null
-      editor.focus()
-      return true
-    }
-
-    const showError = (message: string): void => {
-      if (errorBox) {
-        root.remove(errorBox)
-        errorBox.destroyRecursively()
-      }
-      errorBox = errorOverlay(renderer!, theme, message)
-      root.add(errorBox)
-    }
-    reportSaveError = (message) => showError(`save failed — ${message} — ctrl+s retries`)
-
-    const clearError = (): void => {
-      if (!errorBox) return
-      root.remove(errorBox)
-      errorBox.destroyRecursively()
-      errorBox = null
-    }
-
-    const flush = (): void => {
-      try {
-        service.flush()
-        clearError()
-      } catch (error) {
-        reportSaveError(error instanceof Error ? error.message : String(error))
-      }
-    }
-
     const applyTransactionToEditor = (transaction: Transaction): void => {
       const cursor = transformOffset(editor.cursorOffset, transaction.edits)
       const selection = editor.getSelection()
@@ -416,7 +423,7 @@ export async function runEditor(inputPath: string): Promise<void> {
           redoStack.push(undone.transaction.id)
         }
       } catch (error) {
-        showError(error instanceof Error ? error.message : String(error))
+        reportError(error instanceof Error ? error.message : String(error))
       }
     }
 
@@ -430,214 +437,43 @@ export async function runEditor(inputPath: string): Promise<void> {
           undoStack.push(redone.transaction.id)
         }
       } catch (error) {
-        showError(error instanceof Error ? error.message : String(error))
+        reportError(error instanceof Error ? error.message : String(error))
       }
     }
-
-    const prompt = (placeholder: string, submit: (value: string) => void): void => {
-      closeOverlay()
-      const promptOverlay = new PromptOverlay(
-        renderer!,
-        theme,
-        placeholder,
-        (value) => {
-          closeOverlay()
-          submit(value)
-        },
-        () => closeOverlay(),
-      )
-      overlay = promptOverlay.box
-      root.add(overlay)
-      promptOverlay.focus()
-    }
-
-    const find = (): void => {
-      prompt("find", (query) => {
-        if (!query) return
-        const text = editor.plainText
-        let index = text.indexOf(query, editor.cursorOffset)
-        if (index === -1) index = text.indexOf(query)
-        if (index !== -1) {
-          editor.setSelection(index, index + query.length)
-          editor.cursorOffset = index + query.length
-        }
-      })
-    }
-
-    const replace = (): void => {
-      prompt("find", (query) => {
-        if (!query) return
-        prompt("replace with", (replacement) => {
-          const text = editor.plainText
-          let index = text.indexOf(query, editor.cursorOffset)
-          if (index === -1) index = text.indexOf(query)
-          if (index === -1) return
-          editor.setSelection(index, index + query.length)
-          editor.deleteSelection()
-          editor.insertText(replacement)
-        })
-      })
-    }
-
-    const showPreview = (): void => {
-      closeOverlay()
-      root.remove(editor)
-      const syntaxStyle = markdownStyle(theme)
-      preview = new ScrollBoxRenderable(renderer!, {
-        id: "preview",
-        width: "100%",
-        height: "100%",
-        scrollY: true,
-        scrollX: false,
-        backgroundColor: theme.background,
-        verticalScrollbarOptions: { visible: false },
-      })
-      preview.add(
-        new MarkdownRenderable(renderer!, {
-          content: service.model.text,
-          syntaxStyle,
-          fg: theme.primary,
-          bg: theme.background,
-          width: "100%",
-          conceal: true,
-          concealCode: false,
-          tableOptions: { style: "columns", borders: false, outerBorder: false },
-        }),
-      )
-      root.add(preview)
-      preview.focus()
-    }
-
-    const showProposalPreview = (patch: string): void => {
-      closeOverlay()
-      root.remove(editor)
-      preview = new ScrollBoxRenderable(renderer!, {
-        id: "proposal-preview",
-        width: "100%",
-        height: "100%",
-        scrollY: true,
-        scrollX: false,
-        backgroundColor: theme.background,
-        verticalScrollbarOptions: { visible: false },
-      })
-      const chunks = patch.replaceAll("\r\n", "\n").split("\n").flatMap((line, index) => {
-        const color =
-          line.startsWith("+") && !line.startsWith("+++")
-            ? theme.added
-            : line.startsWith("-") && !line.startsWith("---")
-              ? theme.removed
-              : line.startsWith("@@")
-                ? theme.accent
-                : theme.secondary
-        return index === 0 ? [fg(color)(line)] : [fg(theme.background)("\n"), fg(color)(line)]
-      })
-      preview.add(
-        new TextRenderable(renderer!, {
-          content: new StyledText(chunks),
-          width: "100%",
-          height: "auto",
-          selectable: true,
-        }),
-      )
-      root.add(preview)
-      preview.focus()
-    }
-
-    const commands = (): Command[] => {
-      const base: Command[] = [
-        { label: "find", run: find },
-        { label: "replace", run: replace },
-        {
-          label: "go to line",
-          run: () => prompt("line", (value) => editor.setCursor(Math.max(0, Number.parseInt(value, 10) - 1), 0)),
-        },
-        {
-          label: editor.wrapMode === "none" ? "enable word wrap" : "disable word wrap",
-          run: () => {
-            editor.wrapMode = editor.wrapMode === "none" ? "word" : "none"
-          },
-        },
-        { label: "preview markdown", run: showPreview },
-        { label: "undo my change", run: undo },
-        { label: "redo my change", run: redo },
-        { label: "save", run: flush },
-        { label: "quit", run: finish },
-      ]
-      const proposal = service.pendingProposals[0]
-      if (proposal) {
-        base.unshift(
-          { label: `preview proposal from ${proposal.actor}`, run: () => showProposalPreview(proposal.patch) },
-          {
-            label: `accept proposal from ${proposal.actor}`,
-            run: () => {
-              try {
-                service.acceptProposal(proposal.id)
-              } catch (error) {
-                showError(error instanceof Error ? error.message : String(error))
-              }
-            },
-          },
-          { label: `reject proposal from ${proposal.actor}`, run: () => void service.rejectProposal(proposal.id) },
-        )
-      }
-      return base
-    }
-
-    const openCommands = (): void => {
-      if (overlay) {
-        closeOverlay()
-        return
-      }
-      const commandOverlay = new CommandOverlay(renderer!, theme, commands, () => closeOverlay())
-      overlay = commandOverlay.box
-      root.add(overlay)
-      commandOverlay.focus()
-    }
-
+    exitConfirmation = new ExitConfirmation(
+      (armed) => {
+        exitArmed = armed
+        refreshNotice()
+      },
+      finish,
+    )
     editor.callbacks = {
-      quit: finish,
-      commands: openCommands,
-      save: flush,
+      quit: () => exitConfirmation?.request(),
       undo,
       redo,
-      closeOverlay,
     }
 
-    service.subscribe((event) => {
+    service.subscribe((transaction) => {
       if (closing) return
-      const transactionId = event.transaction?.id
-      if (!transactionId || event.transaction?.actor.startsWith("human")) return
-      const transaction = service.model.history.find((candidate) => candidate.id === transactionId)
-      if (transaction) applyTransactionToEditor(transaction)
+      if (transaction.actor.startsWith("human")) return
+      applyTransactionToEditor(transaction)
     })
     service.subscribeSaveError((error) => {
       if (closing) return
-      if (error) reportSaveError(error.message)
-      else clearError()
-    })
-
-    renderer.keyInput.on("keypress", (key) => {
-      const name = key.name.toLowerCase()
-      if (key.ctrl && name === "c") {
-        key.preventDefault()
-        finish()
-        return
-      }
-      if (preview && (name === "escape" || (key.meta && name === "x"))) {
-        key.preventDefault()
-        closeOverlay()
-      }
+      errorMessage = error ? `save failed — ${error.message}` : null
+      refreshNotice()
     })
 
     root.add(editor)
+    root.add(noticeBox)
     renderer.root.add(root)
     editor.focus()
     renderer.start()
     await finished
-    flush()
     renderer.destroy()
     renderer = null
   } finally {
+    exitConfirmation?.cancel()
     if (renderer) renderer.destroy()
     try {
       service.close()
@@ -656,20 +492,4 @@ function activeLine(text: string, cursor: number): { start: number; end: number 
 
 function isMarkdown(path: string): boolean {
   return /\.(?:md|mdx|markdown)$/i.test(path)
-}
-
-function markdownStyle(theme: EditorTheme): SyntaxStyle {
-  return SyntaxStyle.fromStyles({
-    default: { fg: theme.primary },
-    text: { fg: theme.primary },
-    "markup.heading": { fg: theme.primary, bold: true },
-    "markup.bold": { fg: theme.primary, bold: true },
-    "markup.italic": { fg: theme.secondary, italic: true },
-    "markup.raw": { fg: theme.dim },
-    "markup.link": { fg: theme.secondary },
-    comment: { fg: theme.dim },
-    keyword: { fg: theme.accent },
-    string: { fg: theme.secondary },
-    number: { fg: theme.secondary },
-  })
 }

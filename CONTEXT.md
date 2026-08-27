@@ -20,7 +20,3 @@ _Avoid_: daemon, server.
 **Active region** — The human selection, or current logical line after recent
 input, that temporarily refuses overlapping agent Transactions.
 _Avoid_: ownership lock, checkout.
-
-**Proposal** — An agent Transaction staged for human review rather than
-applied. It never changes the Document until accepted against its Revision.
-_Avoid_: pending write, draft Document.

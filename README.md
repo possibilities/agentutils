@@ -26,12 +26,13 @@ The editor keeps familiar terminal and Readline editing behavior, including
 arrows, selection, `ctrl+a/e/b/f/n/p`, `alt+b/f`, `ctrl+k/u/w`,
 `alt+d/backspace`, `ctrl+y`, transpose, paste, undo, and redo. Consecutive
 kills accumulate in source order; at the end of a logical line, `ctrl+k`
-kills its newline so the next line joins it. `alt+x` opens the temporary
-command overlay. `ctrl+s` flushes human input immediately and `ctrl+c` exits
-after flushing.
+kills its newline so the next line joins it. Human edits save automatically.
+The first `ctrl+c` shows `press ctrl+c again to exit`; a second press within
+two seconds flushes and exits.
 
-There is no standing UI around the text. Search, replace, go-to-line, Markdown
-preview, history, and conflicts appear only while invoked.
+There is no command palette, prompt, preview, manual save, or other interactive
+mode. Apart from transient exit and save-failure notices, the TUI is only the
+editable Document.
 
 ## Agent use
 
@@ -41,14 +42,11 @@ that Revision:
 ```sh
 agenteditor read notes.md --json
 agenteditor read notes.md --lines 20:80 --json
-agenteditor search notes.md heading --json
 agenteditor apply notes.md --base sha256:... --json < change.diff
 agenteditor write notes.md --base sha256:... --json < replacement.md
 agenteditor write notes.md --create --json < new.md
 agenteditor status notes.md --json
 agenteditor history notes.md --json
-agenteditor undo notes.md --transaction tx_... --base sha256:... --json
-agenteditor watch notes.md --after sha256:... --jsonl
 ```
 
 `apply` accepts a unified diff for the one named Document. If a live human has
@@ -66,7 +64,7 @@ With `--json`, commands produce one stdout envelope:
 ```
 
 Exit `0` is success, `1` is a domain refusal with an envelope, and `2` is a
-usage error on stderr. `watch --jsonl` emits one event object per line.
+usage error on stderr.
 
 ## Development
 

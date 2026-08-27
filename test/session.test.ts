@@ -59,42 +59,4 @@ describe("live Session", () => {
       lock.release()
     }
   })
-
-  test("stages a Proposal without changing the Document", async () => {
-    const root = mkdtempSync(join(tmpdir(), "agenteditor-proposal-"))
-    roots.push(root)
-    const path = join(root, "doc.md")
-    writeFileSync(path, "alpha\n")
-    const loaded = loadDocument(path)
-    const lock = new DocumentLock(loaded.path)
-    journals.push(lock.paths.journal)
-    lock.acquire()
-    const service = new DocumentService({
-      model: loadJournal(lock.paths.journal, loaded.text),
-      persistence: new DocumentPersistence(loaded),
-      journalPath: lock.paths.journal,
-      sessionActive: true,
-    })
-    const server = new SessionServer(service, lock)
-    await server.start()
-    try {
-      const proposed = await executeRequest<{ proposal: { id: string } }>(path, {
-        kind: "apply",
-        baseRevision: service.model.revision,
-        patch: "@@ -1,1 +1,1 @@\n-alpha\n+ALPHA\n",
-        actor: "agent:test",
-        propose: true,
-      })
-      expect(proposed.ok).toBe(true)
-      expect(service.model.text).toBe("alpha\n")
-      expect(service.pendingProposals).toHaveLength(1)
-      service.model.setActiveRegion(0, service.model.text.length, 60_000)
-      service.acceptProposal(service.pendingProposals[0]!.id)
-      expect(service.model.text).toBe("ALPHA\n")
-    } finally {
-      service.close()
-      await server.close()
-      lock.release()
-    }
-  })
 })

@@ -1,11 +1,10 @@
 #!/usr/bin/env bun
-import { DomainError } from "./errors.js"
-import { executeRequest, executeWatch } from "./commands/execute.js"
+import { executeRequest } from "./commands/execute.js"
 import { runEditor } from "./tui/editor.js"
 import type { Envelope } from "./protocol.js"
 import type { ServiceRequest } from "./session/service.js"
 
-const COMMANDS = new Set(["edit", "read", "search", "apply", "write", "status", "history", "undo", "watch", "help"])
+const COMMANDS = new Set(["edit", "read", "apply", "write", "status", "history", "help"])
 
 class UsageError extends Error {}
 
@@ -16,13 +15,10 @@ Usage:
   agenteditor PATH
   agenteditor edit PATH
   agenteditor read PATH [--lines START:END] [--json]
-  agenteditor search PATH QUERY [--ignore-case] [--json]
-  agenteditor apply PATH --base REV [--actor NAME] [--message TEXT] [--propose] [--json]
+  agenteditor apply PATH --base REV [--actor NAME] [--message TEXT] [--json]
   agenteditor write PATH (--base REV | --create) [--actor NAME] [--message TEXT] [--json]
   agenteditor status PATH [--json]
   agenteditor history PATH [--json]
-  agenteditor undo PATH --transaction ID --base REV [--actor NAME] [--json]
-  agenteditor watch PATH [--after REV] [--jsonl]
 
 Mutation bodies are read from stdin. apply accepts one unified diff; write
 accepts the complete Document. Existing Documents never have a force path.`
@@ -88,10 +84,7 @@ function emit(envelope: Envelope<unknown>, json: boolean, command: string): numb
   }
   const data = envelope.data as Record<string, unknown>
   if (command === "read") process.stdout.write(String(data.content ?? ""))
-  else if (command === "search") {
-    const matches = data.matches as Array<{ line: number; column: number; preview: string }>
-    for (const match of matches) process.stdout.write(`${match.line}:${match.column}:${match.preview}\n`)
-  } else if ("revision" in data) {
+  else if ("revision" in data) {
     const transaction = data.transaction as { id?: string; rebased?: boolean } | null | undefined
     process.stdout.write(`${String(data.revision)}${transaction?.id ? ` ${transaction.id}` : ""}${transaction?.rebased ? " rebased" : ""}\n`)
   } else process.stdout.write(`${JSON.stringify(data, null, 2)}\n`)
@@ -126,25 +119,16 @@ async function run(): Promise<number> {
       request = { kind: "read", ...(linesValue === undefined ? {} : { lines: parseLines(linesValue) }) }
       break
     }
-    case "search": {
-      const ignoreCase = takeFlag(args, "--ignore-case")
-      const query = args.shift()
-      if (!query || query.startsWith("--")) throw new UsageError("search requires a query")
-      request = { kind: "search", query, ignoreCase }
-      break
-    }
     case "apply": {
       const baseRevision = requireValue(args, "--base")
       const requestActor = actor(args)
       const message = takeValue(args, "--message")
-      const propose = takeFlag(args, "--propose")
       const patch = await Bun.stdin.text()
       request = {
         kind: "apply",
         baseRevision,
         patch,
         actor: requestActor,
-        propose,
         ...(message === undefined ? {} : { message }),
       }
       break
@@ -174,41 +158,6 @@ async function run(): Promise<number> {
     case "history":
       request = { kind: "history" }
       break
-    case "undo": {
-      request = {
-        kind: "undo",
-        transactionId: requireValue(args, "--transaction"),
-        baseRevision: requireValue(args, "--base"),
-        actor: actor(args),
-      }
-      break
-    }
-    case "watch": {
-      takeFlag(args, "--jsonl")
-      const after = takeValue(args, "--after")
-      assertNoArgs(args)
-      try {
-        const watcher = executeWatch(path, after, (line) => process.stdout.write(`${line}\n`))
-        const stop = () => {
-          watcher.close()
-          process.exitCode = 0
-        }
-        process.once("SIGINT", stop)
-        process.once("SIGTERM", stop)
-        await new Promise<void>((resolve) => {
-          process.once("SIGINT", resolve)
-          process.once("SIGTERM", resolve)
-        })
-        return 0
-      } catch (error) {
-        const domain = error instanceof DomainError ? error : new DomainError("bad_request", String(error))
-        return emit(
-          { schema_version: 1, ok: false, error: { code: domain.code, message: domain.message }, data: null },
-          true,
-          command,
-        )
-      }
-    }
     default:
       throw new UsageError(`unknown command: ${command}`)
   }

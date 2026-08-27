@@ -7,6 +7,9 @@ the editor or its CLI protocol.
 
 - The live TUI is only the document. It has no persistent header, footer,
   filename, line-number gutter, status row, help text, or surrounding controls.
+- The TUI has no command palette, prompts, preview, or manual save. Human
+  interaction is keyboard/mouse editing plus a two-press `ctrl+c` exit; only
+  transient exit and save-failure notices may cover the Document.
 - Visual decisions come only from `~/code/fxnk/style/STYLE.md` and
   `~/code/fxnk/style/tokens.json`; no fleet-wide TUI convention applies.
 - Human and agent mutations share one revisioned Document. Never add a blind

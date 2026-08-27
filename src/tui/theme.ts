@@ -3,17 +3,11 @@ import type { CliRenderer } from "@opentui/core"
 export type EditorTheme = {
   background: string
   primary: string
-  accent: string
-  secondary: string
   dim: string
-  divider: string
-  surface: string
   focus: string
   error: string
   selectionBackground: string
   selectionForeground: string
-  added: string
-  removed: string
 }
 
 const DARK_FALLBACK = { background: "#1c1c1c", foreground: "#eeeeee" }
@@ -66,16 +60,10 @@ export async function editorTheme(renderer: CliRenderer): Promise<EditorTheme> {
   return {
     background,
     primary,
-    accent: mix(background, primary, 0.85),
-    secondary: mix(background, primary, 0.75),
     dim: mix(background, primary, 0.5),
-    divider: mix(background, primary, 0.3),
-    surface: mix(background, primary, 0.12),
     focus,
     error,
     selectionBackground,
     selectionForeground,
-    added: "#30a46c",
-    removed: "#e5484d",
   }
 }

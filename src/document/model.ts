@@ -150,7 +150,7 @@ export class DocumentModel {
       const region = this.currentActiveRegion()
       if (region && edits.some((edit) => rangesOverlap(edit, region))) {
         throw new DomainError("edit_conflict", "the Transaction overlaps the human's Active region", {
-          recovery: "wait for the human to leave the region, or submit a Proposal",
+          recovery: "wait for the human to leave the region, then read the Document and retry",
           details: { current_revision: this._revision, active_region: region },
         })
       }

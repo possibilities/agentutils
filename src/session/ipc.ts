@@ -81,13 +81,6 @@ export class SessionServer {
       if (!this.metadata || wire.token !== this.metadata.token) {
         throw new DomainError("bad_request", "Session authentication failed")
       }
-      if (wire.request.kind === "watch") {
-        const after = wire.request.afterRevision
-        if (!after || after !== this.service.model.revision) socket.write(`${JSON.stringify(this.service.currentEvent())}\n`)
-        const unsubscribe = this.service.subscribe((event) => socket.write(`${JSON.stringify(event)}\n`))
-        socket.once("close", unsubscribe)
-        return
-      }
       const data = await this.service.request(wire.request)
       socket.end(`${JSON.stringify(success(data))}\n`)
     } catch (error) {
@@ -118,27 +111,6 @@ export async function requestSession<T>(metadata: SessionMetadata, request: Serv
       if (!output.includes("\n")) reject(new Error("Session closed without a response"))
     })
   })
-}
-
-export function watchSession(
-  metadata: SessionMetadata,
-  request: Extract<ServiceRequest, { kind: "watch" }>,
-  onLine: (line: string) => void,
-): Socket {
-  const socket = createConnection(metadata.socket)
-  socket.setEncoding("utf8")
-  let output = ""
-  socket.on("connect", () => socket.write(`${JSON.stringify({ token: metadata.token, request })}\n`))
-  socket.on("data", (chunk: string) => {
-    output += chunk
-    while (true) {
-      const newline = output.indexOf("\n")
-      if (newline === -1) break
-      onLine(output.slice(0, newline))
-      output = output.slice(newline + 1)
-    }
-  })
-  return socket
 }
 
 export function activeSession(metadataPath: string): SessionMetadata | null {

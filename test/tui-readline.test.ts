@@ -1,13 +1,23 @@
 import { expect, test } from "bun:test"
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing"
-import { DocumentTextarea } from "../src/tui/editor.js"
+import {
+  DocumentTextarea,
+  EXIT_CONFIRMATION_TIMEOUT_MS,
+  ExitConfirmation,
+} from "../src/tui/editor.js"
 
 async function withEditor(
   initialValue: string,
   cursor: number,
   run: (editor: DocumentTextarea, setup: TestRendererSetup) => Promise<void>,
 ): Promise<void> {
-  const setup = await createTestRenderer({ width: 80, height: 24, kittyKeyboard: true })
+  const setup = await createTestRenderer({
+    width: 80,
+    height: 24,
+    kittyKeyboard: true,
+    exitOnCtrlC: false,
+    exitSignals: [],
+  })
   const editor = new DocumentTextarea(setup.renderer, {
     width: "100%",
     height: "100%",
@@ -125,15 +135,12 @@ test("readline transpose and application undo/redo chords remain wired", async (
     let redos = 0
     editor.callbacks = {
       quit: () => {},
-      commands: () => {},
-      save: () => {},
       undo: () => {
         undos++
       },
       redo: () => {
         redos++
       },
-      closeOverlay: () => false,
     }
 
     await press(setup, "t", { ctrl: true })
@@ -146,4 +153,43 @@ test("readline transpose and application undo/redo chords remain wired", async (
     await press(setup, ".", { ctrl: true })
     expect({ undos, redos }).toEqual({ undos: 1, redos: 1 })
   })
+})
+
+test("ctrl+c requires a second press inside the fmx confirmation window", async () => {
+  expect(EXIT_CONFIRMATION_TIMEOUT_MS).toBe(2_000)
+  const armed: boolean[] = []
+  let quits = 0
+  const confirmation = new ExitConfirmation(
+    (value) => armed.push(value),
+    () => quits++,
+    20,
+  )
+
+  await withEditor("still here", 4, async (editor, setup) => {
+    editor.callbacks = {
+      quit: () => confirmation.request(),
+      undo: () => {},
+      redo: () => {},
+    }
+
+    await press(setup, "c", { ctrl: true })
+    expect({ armed, quits, text: editor.plainText }).toEqual({
+      armed: [true],
+      quits: 0,
+      text: "still here",
+    })
+
+    await Bun.sleep(30)
+    expect({ armed, quits }).toEqual({ armed: [true, false], quits: 0 })
+
+    await press(setup, "c", { ctrl: true })
+    await press(setup, "c", { ctrl: true })
+    expect({ armed, quits, text: editor.plainText }).toEqual({
+      armed: [true, false, true, false],
+      quits: 1,
+      text: "still here",
+    })
+  })
+
+  confirmation.cancel()
 })

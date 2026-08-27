@@ -86,4 +86,35 @@ describe("agent CLI", () => {
     const ranged = await cli(["read", path, "--lines", "1:1", "--json"])
     expect(JSON.parse(ranged.stdout).data.range).toEqual({ start: 0, end: 0, total: 0 })
   })
+
+  test("does not expose search, undo, watch, or Proposal staging", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenteditor-removed-commands-"))
+    roots.push(root)
+    const path = join(root, "notes.md")
+    const created = await cli(["write", path, "--create", "--json"], "alpha\n")
+    expect(created.exitCode).toBe(0)
+    journals.push(documentPaths(realpathSync(path)).journal)
+    const revision = JSON.parse(created.stdout).data.revision as string
+
+    const search = await cli(["search", path, "alpha", "--json"])
+    expect(search.exitCode).toBe(2)
+
+    const undo = await cli(["undo", path, "--transaction", "tx_removed", "--base", revision, "--json"])
+    expect(undo.exitCode).toBe(2)
+
+    const watch = await cli(["watch", path, "--after", revision, "--jsonl"])
+    expect(watch.exitCode).toBe(2)
+
+    const proposal = await cli(
+      ["apply", path, "--base", revision, "--propose", "--json"],
+      "@@ -1,1 +1,1 @@\n-alpha\n+ALPHA\n",
+    )
+    expect(proposal.exitCode).toBe(2)
+
+    const help = await cli(["--help"])
+    expect(help.stdout).not.toContain("agenteditor search")
+    expect(help.stdout).not.toContain("agenteditor undo")
+    expect(help.stdout).not.toContain("agenteditor watch")
+    expect(help.stdout).not.toContain("--propose")
+  })
 })
