@@ -23,9 +23,12 @@ agenteditor notes.md
 ```
 
 The editor keeps familiar terminal and Readline editing behavior, including
-arrows, selection, `ctrl+a/e/b/f`, `alt+b/f`, `ctrl+k/u/w`, `ctrl+y`, paste,
-undo, and redo. `alt+x` opens the temporary command overlay. `ctrl+s` flushes
-human input immediately and `ctrl+c` exits after flushing.
+arrows, selection, `ctrl+a/e/b/f/n/p`, `alt+b/f`, `ctrl+k/u/w`,
+`alt+d/backspace`, `ctrl+y`, transpose, paste, undo, and redo. Consecutive
+kills accumulate in source order; at the end of a logical line, `ctrl+k`
+kills its newline so the next line joins it. `alt+x` opens the temporary
+command overlay. `ctrl+s` flushes human input immediately and `ctrl+c` exits
+after flushing.
 
 There is no standing UI around the text. Search, replace, go-to-line, Markdown
 preview, history, and conflicts appear only while invoked.

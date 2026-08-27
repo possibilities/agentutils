@@ -30,9 +30,10 @@ type EditorCallbacks = {
   closeOverlay: () => boolean
 }
 
-class DocumentTextarea extends TextareaRenderable {
+export class DocumentTextarea extends TextareaRenderable {
   callbacks: EditorCallbacks | null = null
   private killRing = ""
+  private continuingKill = false
 
   constructor(ctx: RenderContext, options: ConstructorParameters<typeof TextareaRenderable>[1]) {
     super(ctx, options)
@@ -40,6 +41,10 @@ class DocumentTextarea extends TextareaRenderable {
 
   override handleKeyPress(key: KeyEvent): boolean {
     const name = key.name.toLowerCase()
+    const kill = this.killCommand(key, name)
+    if (kill) return kill()
+    this.continuingKill = false
+
     if (name === "escape" && this.callbacks?.closeOverlay()) return true
     if (key.ctrl && name === "c") {
       this.callbacks?.quit()
@@ -65,6 +70,18 @@ class DocumentTextarea extends TextareaRenderable {
       if (this.killRing) this.insertText(this.killRing)
       return true
     }
+    if (key.ctrl && name === "a" && !key.shift) return this.moveToLogicalLineBoundary("start")
+    if (key.ctrl && name === "e" && !key.shift) return this.moveToLogicalLineBoundary("end")
+    if (key.ctrl && name === "p") return this.moveCursorUp()
+    if (key.ctrl && name === "n") return this.moveCursorDown()
+    if (key.meta && (name === "<" || (name === "," && key.shift))) {
+      this.clearSelection()
+      return this.gotoBufferHome()
+    }
+    if (key.meta && (name === ">" || (name === "." && key.shift))) {
+      this.clearSelection()
+      return this.gotoBufferEnd()
+    }
     if (name === "tab") {
       this.editIndent(key.shift)
       return true
@@ -77,26 +94,93 @@ class DocumentTextarea extends TextareaRenderable {
       this.transposeWords()
       return true
     }
-    if (key.ctrl && (name === "k" || name === "u" || name === "w")) this.captureKill(name)
     return super.handleKeyPress(key)
   }
 
-  private captureKill(name: string): void {
+  private killCommand(key: KeyEvent, name: string): (() => boolean) | null {
+    if (key.ctrl && name === "k") return () => this.killToLineEnd()
+    if (key.ctrl && name === "u") return () => this.killToLineStart()
+    if (key.ctrl && (name === "w" || name === "backspace")) return () => this.killUnixWordBackward()
+    if (key.meta && name === "d") return () => this.killWordForward()
+    if (key.meta && name === "backspace") return () => this.killWordBackward()
+    return null
+  }
+
+  private selectedKillRange(): { start: number; end: number } | null {
+    const selection = this.getSelection()
+    return selection ? { start: selection.start, end: selection.end } : null
+  }
+
+  private killToLineEnd(): boolean {
     const text = this.plainText
     const cursor = this.cursorOffset
-    let start = cursor
-    let end = cursor
-    if (name === "k") {
-      const newline = text.indexOf("\n", cursor)
-      end = newline === -1 ? text.length : newline
-    } else if (name === "u") {
-      start = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1
-    } else {
-      const prefix = text.slice(0, cursor)
-      const match = /(?:\s+|[^\p{L}\p{N}_]+|[\p{L}\p{N}_]+)$/u.exec(prefix)
-      start = match ? cursor - match[0].length : cursor
-    }
-    this.killRing = text.slice(start, end)
+    const selection = this.selectedKillRange()
+    if (selection) return this.killRange(selection.start, selection.end, "forward")
+    const newline = text.indexOf("\n", cursor)
+    const end = newline === -1 ? text.length : newline === cursor ? cursor + 1 : newline
+    return this.killRange(cursor, end, "forward")
+  }
+
+  private killToLineStart(): boolean {
+    const text = this.plainText
+    const cursor = this.cursorOffset
+    const selection = this.selectedKillRange()
+    if (selection) return this.killRange(selection.start, selection.end, "backward")
+    const start = text.lastIndexOf("\n", cursor - 1) + 1
+    return this.killRange(start, cursor, "backward")
+  }
+
+  private killUnixWordBackward(): boolean {
+    const cursor = this.cursorOffset
+    const selection = this.selectedKillRange()
+    if (selection) return this.killRange(selection.start, selection.end, "backward")
+    const prefix = this.plainText.slice(0, cursor)
+    const match = /(?:\S+\s*|\s+)$/u.exec(prefix)
+    return this.killRange(match?.index ?? cursor, cursor, "backward")
+  }
+
+  private killWordBackward(): boolean {
+    const cursor = this.cursorOffset
+    const selection = this.selectedKillRange()
+    if (selection) return this.killRange(selection.start, selection.end, "backward")
+    const prefix = this.plainText.slice(0, cursor)
+    const match = /(?:[\p{L}\p{N}_]+[^\p{L}\p{N}_]*|[^\p{L}\p{N}_]+)$/u.exec(prefix)
+    return this.killRange(match?.index ?? cursor, cursor, "backward")
+  }
+
+  private killWordForward(): boolean {
+    const text = this.plainText
+    const cursor = this.cursorOffset
+    const selection = this.selectedKillRange()
+    if (selection) return this.killRange(selection.start, selection.end, "forward")
+    const match = /^(?:[^\p{L}\p{N}_]*[\p{L}\p{N}_]+|[^\p{L}\p{N}_]+)/u.exec(text.slice(cursor))
+    return this.killRange(cursor, cursor + (match?.[0].length ?? 0), "forward")
+  }
+
+  private killRange(start: number, end: number, direction: "forward" | "backward"): boolean {
+    if (start === end) return true
+    const killed = this.plainText.slice(start, end)
+    this.killRing = this.continuingKill
+      ? direction === "backward"
+        ? killed + this.killRing
+        : this.killRing + killed
+      : killed
+    this.continuingKill = true
+    this.setSelection(start, end)
+    this.deleteSelection()
+    return true
+  }
+
+  private moveToLogicalLineBoundary(boundary: "start" | "end"): boolean {
+    const text = this.plainText
+    const cursor = this.cursorOffset
+    const target =
+      boundary === "start"
+        ? text.lastIndexOf("\n", cursor - 1) + 1
+        : (text.indexOf("\n", cursor) === -1 ? text.length : text.indexOf("\n", cursor))
+    this.clearSelection()
+    this.cursorOffset = target
+    return true
   }
 
   private editIndent(outdent: boolean): void {
