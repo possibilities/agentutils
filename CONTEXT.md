@@ -8,8 +8,9 @@ _Avoid_: buffer, file contents.
 by every mutation. It is a concurrency precondition, not a sequence number.
 _Avoid_: version, timestamp.
 
-**Transaction** — One attributed, atomic change to a Document. A Transaction
-may contain several non-overlapping edits and is the unit of history and undo.
+**Transaction** — One atomic change to a Document, attributed as `human` for
+TUI input or `assistant` for CLI input. A Transaction may contain several
+non-overlapping edits and is the unit of internal history and undo.
 _Avoid_: command, write, patch.
 
 **Session** — The local single-writer coordinator held by an interactive TUI.

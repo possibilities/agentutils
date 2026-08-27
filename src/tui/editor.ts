@@ -268,7 +268,6 @@ export async function runEditor(inputPath: string): Promise<void> {
     model,
     persistence: new DocumentPersistence(loaded),
     journalPath: lock.paths.journal,
-    sessionActive: true,
   })
   const session = new SessionServer(service, lock)
   let renderer: Awaited<ReturnType<typeof createCliRenderer>> | null = null
@@ -455,7 +454,7 @@ export async function runEditor(inputPath: string): Promise<void> {
 
     service.subscribe((transaction) => {
       if (closing) return
-      if (transaction.actor.startsWith("human")) return
+      if (transaction.actor === "human") return
       applyTransactionToEditor(transaction)
     })
     service.subscribeSaveError((error) => {

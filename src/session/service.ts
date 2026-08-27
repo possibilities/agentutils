@@ -11,16 +11,13 @@ export type PublicTransaction = Omit<Transaction, "edits" | "inverse"> & {
 
 export type ServiceRequest =
   | { kind: "read"; lines?: { start: number; end: number } }
-  | { kind: "status" }
-  | { kind: "history" }
-  | { kind: "apply"; baseRevision: string; patch: string; actor: string; message?: string }
-  | { kind: "write"; baseRevision?: string; content: string; actor: string; message?: string; create?: boolean }
+  | { kind: "apply"; baseRevision: string; patch: string }
+  | { kind: "write"; baseRevision?: string; content: string; create?: boolean }
 
 export class DocumentService {
   private _model: DocumentModel
   private readonly persistence: DocumentPersistence
   private readonly journalPath: string
-  private readonly sessionActive: boolean
   private dirty = false
   private saveTimer: ReturnType<typeof setTimeout> | null = null
   private saveError: Error | null = null
@@ -31,12 +28,10 @@ export class DocumentService {
     model: DocumentModel
     persistence: DocumentPersistence
     journalPath: string
-    sessionActive: boolean
   }) {
     this._model = options.model
     this.persistence = options.persistence
     this.journalPath = options.journalPath
-    this.sessionActive = options.sessionActive
   }
 
   get model(): DocumentModel {
@@ -51,15 +46,9 @@ export class DocumentService {
     switch (request.kind) {
       case "read":
         return this.read(request.lines)
-      case "status":
-        return this.status()
-      case "history":
-        return { revision: this._model.revision, transactions: this._model.history.map(publicTransaction) }
       case "apply":
-        assertAgentActor(request.actor)
         return publicMutation(this.applyPatch(request))
       case "write":
-        assertAgentActor(request.actor)
         return publicMutation(this.write(request))
     }
   }
@@ -83,8 +72,8 @@ export class DocumentService {
     this._model.setActiveRegion(start, end)
   }
 
-  undoTransaction(transactionId: string, actor = "human"): TransactionResult {
-    return this.undo(transactionId, actor, this._model.revision)
+  undoTransaction(transactionId: string): TransactionResult {
+    return this.undo(transactionId, this._model.revision)
   }
 
   subscribe(listener: (transaction: Transaction) => void): () => void {
@@ -137,26 +126,12 @@ export class DocumentService {
     }
   }
 
-  private status(): Record<string, unknown> {
-    return {
-      document: this.path,
-      revision: this._model.revision,
-      persisted_revision: this.persistence.persistedRevision,
-      dirty: this.dirty,
-      save_error: this.saveError?.message ?? null,
-      session: this.sessionActive,
-      transactions: this._model.history.length,
-    }
-  }
-
   private applyPatch(request: Extract<ServiceRequest, { kind: "apply" }>): TransactionResult {
     const baseText = this._model.snapshot(request.baseRevision)
     const edits = editsFromUnifiedDiff(baseText, request.patch)
     return this.commit({
-      actor: request.actor,
       baseRevision: request.baseRevision,
       edits,
-      ...(request.message === undefined ? {} : { message: request.message }),
     })
   }
 
@@ -189,17 +164,15 @@ export class DocumentService {
       return { changed: false, revision: this._model.revision, transaction: null, text: this._model.text }
     }
     return this.commit({
-      actor: request.actor,
       baseRevision,
       edits: [edit],
-      ...(request.message === undefined ? {} : { message: request.message }),
     })
   }
 
-  private undo(transactionId: string, actor: string, baseRevision: string): TransactionResult {
+  private undo(transactionId: string, baseRevision: string): TransactionResult {
     this.persistence.assertUnchanged()
     const candidate = this._model.fork()
-    const result = candidate.undo(transactionId, actor, baseRevision)
+    const result = candidate.undo(transactionId, "human", baseRevision)
     this.persistence.save(candidate.text)
     saveJournal(this.journalPath, candidate)
     this._model = candidate
@@ -209,14 +182,12 @@ export class DocumentService {
   }
 
   private commit(request: {
-    actor: string
     baseRevision: string
     edits: TextEdit[]
-    message?: string
   }): TransactionResult {
     this.persistence.assertUnchanged()
     const candidate = this._model.fork()
-    const result = candidate.apply(request)
+    const result = candidate.apply({ ...request, actor: "assistant" })
     if (!result.changed) return result
     this.persistence.save(candidate.text)
     saveJournal(this.journalPath, candidate)
@@ -274,13 +245,5 @@ function publicMutation(result: TransactionResult): Record<string, unknown> {
     changed: result.changed,
     revision: result.revision,
     transaction: publicTransaction(result.transaction),
-  }
-}
-
-function assertAgentActor(actor: string): void {
-  if (actor.startsWith("human")) {
-    throw new DomainError("bad_request", "the human actor namespace is reserved for TUI input", {
-      recovery: "choose an agent name such as --actor codex",
-    })
   }
 }

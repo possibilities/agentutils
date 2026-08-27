@@ -31,7 +31,6 @@ describe("live Session", () => {
       model: loadJournal(lock.paths.journal, loaded.text),
       persistence: new DocumentPersistence(loaded),
       journalPath: lock.paths.journal,
-      sessionActive: true,
     })
     const server = new SessionServer(service, lock)
     await server.start()
@@ -46,7 +45,6 @@ describe("live Session", () => {
         kind: "apply",
         baseRevision: base,
         patch: "@@ -1,2 +1,2 @@\n alpha\n-beta\n+BETA\n",
-        actor: "agent:test",
       })
       expect(applied.ok).toBe(true)
       if (applied.ok) {

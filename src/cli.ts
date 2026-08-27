@@ -4,7 +4,7 @@ import { runEditor } from "./tui/editor.js"
 import type { Envelope } from "./protocol.js"
 import type { ServiceRequest } from "./session/service.js"
 
-const COMMANDS = new Set(["edit", "read", "apply", "write", "status", "history", "help"])
+const COMMANDS = new Set(["edit", "read", "apply", "write", "help"])
 
 class UsageError extends Error {}
 
@@ -15,10 +15,8 @@ Usage:
   agenteditor PATH
   agenteditor edit PATH
   agenteditor read PATH [--lines START:END] [--json]
-  agenteditor apply PATH --base REV [--actor NAME] [--message TEXT] [--json]
-  agenteditor write PATH (--base REV | --create) [--actor NAME] [--message TEXT] [--json]
-  agenteditor status PATH [--json]
-  agenteditor history PATH [--json]
+  agenteditor apply PATH --base REV [--json]
+  agenteditor write PATH (--base REV | --create) [--json]
 
 Mutation bodies are read from stdin. apply accepts one unified diff; write
 accepts the complete Document. Existing Documents never have a force path.`
@@ -63,10 +61,6 @@ function parseLines(value: string): { start: number; end: number } {
   const end = Number(match[2])
   if (start < 1 || end < start) throw new UsageError("--lines end must be at or after start")
   return { start, end }
-}
-
-function actor(args: string[]): string {
-  return takeValue(args, "--actor") ?? process.env.AGENTEDITOR_ACTOR ?? `agent:${process.pid}`
 }
 
 function emit(envelope: Envelope<unknown>, json: boolean, command: string): number {
@@ -121,15 +115,11 @@ async function run(): Promise<number> {
     }
     case "apply": {
       const baseRevision = requireValue(args, "--base")
-      const requestActor = actor(args)
-      const message = takeValue(args, "--message")
       const patch = await Bun.stdin.text()
       request = {
         kind: "apply",
         baseRevision,
         patch,
-        actor: requestActor,
-        ...(message === undefined ? {} : { message }),
       }
       break
     }
@@ -139,25 +129,15 @@ async function run(): Promise<number> {
       if (create === (baseRevision !== undefined)) {
         throw new UsageError("write requires exactly one of --create or --base REV")
       }
-      const requestActor = actor(args)
-      const message = takeValue(args, "--message")
       const content = await Bun.stdin.text()
       request = {
         kind: "write",
         content,
-        actor: requestActor,
         create,
         ...(baseRevision === undefined ? {} : { baseRevision }),
-        ...(message === undefined ? {} : { message }),
       }
       break
     }
-    case "status":
-      request = { kind: "status" }
-      break
-    case "history":
-      request = { kind: "history" }
-      break
     default:
       throw new UsageError(`unknown command: ${command}`)
   }

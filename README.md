@@ -45,14 +45,13 @@ agenteditor read notes.md --lines 20:80 --json
 agenteditor apply notes.md --base sha256:... --json < change.diff
 agenteditor write notes.md --base sha256:... --json < replacement.md
 agenteditor write notes.md --create --json < new.md
-agenteditor status notes.md --json
-agenteditor history notes.md --json
 ```
 
 `apply` accepts a unified diff for the one named Document. If a live human has
 changed a disjoint range since `--base`, the Session rebases the Transaction.
 An overlap returns `edit_conflict`; it never guesses. `write` is a complete
-replacement and therefore conflicts with any intervening edit.
+replacement and therefore conflicts with any intervening edit. CLI
+Transactions are attributed as `assistant`; TUI Transactions as `human`.
 
 ## Machine contract
 

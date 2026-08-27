@@ -30,7 +30,6 @@ export async function executeRequest<T>(
         model,
         persistence: new DocumentPersistence(loaded),
         journalPath: paths.journal,
-        sessionActive: false,
       })
       const data = await service.request(request)
       return success(data as T)

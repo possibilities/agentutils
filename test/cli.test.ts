@@ -49,15 +49,9 @@ describe("agent CLI", () => {
     )
     expect(patched.exitCode).toBe(0)
     expect(JSON.parse(patched.stdout).data.transaction.rebased).toBe(false)
+    expect(JSON.parse(patched.stdout).data.transaction.actor).toBe("assistant")
     const afterPatch = await cli(["read", path, "--json"])
     expect(JSON.parse(afterPatch.stdout).data.content).toBe("alpha\nBETA\n")
-
-    const reservedActor = await cli(
-      ["apply", path, "--base", JSON.parse(patched.stdout).data.revision, "--actor", "human-agent", "--json"],
-      "@@ -1,2 +1,2 @@\n alpha\n-BETA\n+beta\n",
-    )
-    expect(reservedActor.exitCode).toBe(1)
-    expect(JSON.parse(reservedActor.stdout).error.code).toBe("bad_request")
 
     const stale = await cli(["write", path, "--base", base, "--json"], "blind replacement\n")
     expect(stale.exitCode).toBe(1)
@@ -87,7 +81,7 @@ describe("agent CLI", () => {
     expect(JSON.parse(ranged.stdout).data.range).toEqual({ start: 0, end: 0, total: 0 })
   })
 
-  test("does not expose search, undo, watch, or Proposal staging", async () => {
+  test("exposes only the document editing commands", async () => {
     const root = mkdtempSync(join(tmpdir(), "agenteditor-removed-commands-"))
     roots.push(root)
     const path = join(root, "notes.md")
@@ -105,16 +99,38 @@ describe("agent CLI", () => {
     const watch = await cli(["watch", path, "--after", revision, "--jsonl"])
     expect(watch.exitCode).toBe(2)
 
+    const status = await cli(["status", path, "--json"])
+    expect(status.exitCode).toBe(2)
+
+    const history = await cli(["history", path, "--json"])
+    expect(history.exitCode).toBe(2)
+
     const proposal = await cli(
       ["apply", path, "--base", revision, "--propose", "--json"],
       "@@ -1,1 +1,1 @@\n-alpha\n+ALPHA\n",
     )
     expect(proposal.exitCode).toBe(2)
 
+    const message = await cli(
+      ["apply", path, "--base", revision, "--message", "removed", "--json"],
+      "@@ -1,1 +1,1 @@\n-alpha\n+ALPHA\n",
+    )
+    expect(message.exitCode).toBe(2)
+
+    const actor = await cli(
+      ["apply", path, "--base", revision, "--actor", "codex", "--json"],
+      "@@ -1,1 +1,1 @@\n-alpha\n+ALPHA\n",
+    )
+    expect(actor.exitCode).toBe(2)
+
     const help = await cli(["--help"])
     expect(help.stdout).not.toContain("agenteditor search")
     expect(help.stdout).not.toContain("agenteditor undo")
     expect(help.stdout).not.toContain("agenteditor watch")
+    expect(help.stdout).not.toContain("agenteditor status")
+    expect(help.stdout).not.toContain("agenteditor history")
     expect(help.stdout).not.toContain("--propose")
+    expect(help.stdout).not.toContain("--message")
+    expect(help.stdout).not.toContain("--actor")
   })
 })

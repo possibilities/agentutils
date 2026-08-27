@@ -10,12 +10,11 @@ import {
 } from "./edits.js"
 import { revisionOf } from "./revision.js"
 
-export type Actor = string
+export type Actor = "assistant" | "human"
 
 export type Transaction = {
   id: string
   actor: Actor
-  message: string | null
   at: string
   baseRevision: string
   fromRevision: string
@@ -30,7 +29,6 @@ export type TransactionRequest = {
   actor: Actor
   baseRevision: string
   edits: TextEdit[]
-  message?: string
   reverts?: string
   ignoreActiveRegion?: boolean
 }
@@ -96,10 +94,6 @@ export class DocumentModel {
     return this._revision
   }
 
-  get history(): readonly Transaction[] {
-    return this.transactions
-  }
-
   snapshot(revision = this._revision): string {
     const entry = this.revisions.get(revision)
     if (!entry) {
@@ -146,7 +140,7 @@ export class DocumentModel {
       }
     }
 
-    if (!request.ignoreActiveRegion && !request.actor.startsWith("human")) {
+    if (!request.ignoreActiveRegion && request.actor !== "human") {
       const region = this.currentActiveRegion()
       if (region && edits.some((edit) => rangesOverlap(edit, region))) {
         throw new DomainError("edit_conflict", "the Transaction overlaps the human's Active region", {
@@ -168,7 +162,6 @@ export class DocumentModel {
     const transaction: Transaction = {
       id: `tx_${randomUUID().replaceAll("-", "")}`,
       actor: request.actor,
-      message: request.message ?? null,
       at: new Date().toISOString(),
       baseRevision: request.baseRevision,
       fromRevision,
@@ -191,7 +184,7 @@ export class DocumentModel {
   undo(transactionId: string, actor: Actor, baseRevision: string): TransactionResult {
     if (baseRevision !== this._revision) {
       throw new DomainError("stale_revision", "undo must start from the current Revision", {
-        recovery: "read status and retry with its current Revision",
+        recovery: "read the Document and retry with its current Revision",
         details: { current_revision: this._revision },
       })
     }
@@ -204,27 +197,18 @@ export class DocumentModel {
         actor,
         baseRevision: target.toRevision,
         edits: target.inverse,
-        message: `undo ${target.id}`,
         reverts: target.id,
-        ignoreActiveRegion: actor.startsWith("human"),
+        ignoreActiveRegion: actor === "human",
       })
     } catch (error) {
       if (error instanceof DomainError && error.code === "edit_conflict") {
         throw new DomainError("undo_conflict", `Transaction ${transactionId} cannot be undone without touching later work`, {
-          recovery: "review history and create an explicit new Transaction",
+          recovery: "review the Document and make the intended change explicitly",
           ...(error.details === undefined ? {} : { details: error.details }),
         })
       }
       throw error
     }
-  }
-
-  latestTransaction(actorPrefix?: string): Transaction | null {
-    for (let index = this.transactions.length - 1; index >= 0; index -= 1) {
-      const transaction = this.transactions[index]!
-      if (!actorPrefix || transaction.actor.startsWith(actorPrefix)) return transaction
-    }
-    return null
   }
 
   serialize(maxTransactions = 256): SerializedDocumentModel {
