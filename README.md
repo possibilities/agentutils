@@ -4,6 +4,18 @@
 edit together. The TUI renders only the Document; automation uses a guarded,
 schema-versioned CLI instead of simulating keystrokes.
 
+## Installation
+
+`agenteditor` owns its fleet installation contract:
+
+```sh
+scripts/install.sh --install
+```
+
+This installs frozen dependencies, links `~/.local/bin/agenteditor` to this
+checkout, and records the deployed Git SHA. AgentStart invokes the same
+rerunnable installer during its normal full installation.
+
 ## Human use
 
 ```sh

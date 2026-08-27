@@ -27,5 +27,9 @@ bun run typecheck
 bun run build
 ```
 
+Installation changes must preserve the rerunnable, ownership-checking contract
+in `scripts/install.sh`. Run the installer tests and a hermetic install before
+changing AgentStart's fleet loop.
+
 TUI changes also require real PTY verification and visual checks at 40, 80,
 and 120 columns plus a shallow height. Reap every PTY session after testing.
