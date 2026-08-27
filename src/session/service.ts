@@ -92,12 +92,14 @@ export class DocumentService {
       this.saveTimer = null
     }
     if (!this.dirty) return
-    this.persistence.save(this._model.text)
-    saveJournal(this.journalPath, this._model)
+    try {
+      this.persist(this._model)
+    } catch (error) {
+      this.setSaveError(error)
+      throw error
+    }
     this.dirty = false
-    const hadError = this.saveError !== null
-    this.saveError = null
-    if (hadError) this.emitSaveError(null)
+    this.clearSaveError()
   }
 
   close(): void {
@@ -158,8 +160,13 @@ export class DocumentService {
     const edit = deriveSingleEdit(this._model.text, request.content)
     if (!edit) {
       if (request.create) {
-        this.persistence.save(this._model.text)
-        saveJournal(this.journalPath, this._model)
+        try {
+          this.persist(this._model)
+        } catch (error) {
+          this.setSaveError(error)
+          throw error
+        }
+        this.clearSaveError()
       }
       return { changed: false, revision: this._model.revision, transaction: null, text: this._model.text }
     }
@@ -173,10 +180,15 @@ export class DocumentService {
     this.persistence.assertUnchanged()
     const candidate = this._model.fork()
     const result = candidate.undo(transactionId, "human", baseRevision)
-    this.persistence.save(candidate.text)
-    saveJournal(this.journalPath, candidate)
+    try {
+      this.persist(candidate)
+    } catch (error) {
+      this.setSaveError(error)
+      throw error
+    }
     this._model = candidate
     this.dirty = false
+    this.clearSaveError()
     this.emit(result)
     return result
   }
@@ -189,10 +201,15 @@ export class DocumentService {
     const candidate = this._model.fork()
     const result = candidate.apply({ ...request, actor: "assistant" })
     if (!result.changed) return result
-    this.persistence.save(candidate.text)
-    saveJournal(this.journalPath, candidate)
+    try {
+      this.persist(candidate)
+    } catch (error) {
+      this.setSaveError(error)
+      throw error
+    }
     this._model = candidate
     this.dirty = false
+    this.clearSaveError()
     this.emit(result)
     return result
   }
@@ -209,11 +226,27 @@ export class DocumentService {
       this.saveTimer = null
       try {
         this.flush()
-      } catch (error) {
-        this.saveError = error instanceof Error ? error : new Error(String(error))
-        this.emitSaveError(this.saveError)
-      }
+      } catch {}
     }, 120)
+  }
+
+  private persist(model: DocumentModel): void {
+    // Publish history first. If the Document save then fails, the journal's
+    // Revision does not match disk and will be ignored on restart. Reversing
+    // this order can leave disk ahead of the live model after a journal error.
+    saveJournal(this.journalPath, model)
+    this.persistence.save(model.text)
+  }
+
+  private setSaveError(error: unknown): void {
+    this.saveError = error instanceof Error ? error : new Error(String(error))
+    this.emitSaveError(this.saveError)
+  }
+
+  private clearSaveError(): void {
+    if (this.saveError === null) return
+    this.saveError = null
+    this.emitSaveError(null)
   }
 
   private emit(result: TransactionResult): void {

@@ -1,9 +1,13 @@
 import { expect, test } from "bun:test"
 import { createTestRenderer, type TestRendererSetup } from "@opentui/core/testing"
+import { DocumentModel } from "../src/document/model.js"
 import {
   DocumentTextarea,
   EXIT_CONFIRMATION_TIMEOUT_MS,
   ExitConfirmation,
+  TRANSIENT_NOTICE_TIMEOUT_MS,
+  TransientNotice,
+  applyTransactionToEditorState,
 } from "../src/tui/editor.js"
 
 async function withEditor(
@@ -192,4 +196,47 @@ test("ctrl+c requires a second press inside the fmx confirmation window", async 
   })
 
   confirmation.cancel()
+})
+
+test("ordinary error notices clear after the transient notice window", async () => {
+  expect(TRANSIENT_NOTICE_TIMEOUT_MS).toBe(2_000)
+  const messages: Array<string | null> = []
+  const notice = new TransientNotice((message) => messages.push(message), 20)
+
+  notice.show("first")
+  notice.show("second")
+  expect(messages).toEqual(["first", "second"])
+  await Bun.sleep(30)
+  expect(messages).toEqual(["first", "second", null])
+  notice.cancel()
+})
+
+test("an agent Transaction preserves logical cursor, selection, and viewport", async () => {
+  const initial = Array.from({ length: 40 }, (_, index) => `line ${index + 1}`).join("\n")
+  const selectedStart = initial.indexOf("line 20")
+  const inserted = "agent line\n"
+  const model = new DocumentModel(initial)
+  const result = model.apply({
+    actor: "assistant",
+    baseRevision: model.revision,
+    edits: [{ start: 0, end: 0, text: inserted }],
+  })
+  expect(result.transaction).not.toBeNull()
+
+  await withEditor(initial, selectedStart, async (editor) => {
+    editor.setSelection(selectedStart, selectedStart + "line 20".length)
+    editor.cursorOffset = selectedStart + "line 20".length
+    editor.editorView.setViewport(0, 8, 80, 12, false)
+    const viewport = editor.editorView.getViewport()
+
+    applyTransactionToEditorState(editor, model.text, result.transaction!)
+
+    expect(editor.plainText).toBe(inserted + initial)
+    expect(editor.cursorOffset).toBe(selectedStart + "line 20".length + inserted.length)
+    expect(editor.getSelection()).toEqual({
+      start: selectedStart + inserted.length,
+      end: selectedStart + "line 20".length + inserted.length,
+    })
+    expect(editor.editorView.getViewport()).toEqual(viewport)
+  })
 })

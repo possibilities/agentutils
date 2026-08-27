@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { executeRequest } from "../src/commands/execute.js"
@@ -33,6 +33,8 @@ describe("live Session", () => {
       journalPath: lock.paths.journal,
     })
     const server = new SessionServer(service, lock)
+    const observedActors: string[] = []
+    service.subscribe((transaction) => observedActors.push(transaction.actor))
     await server.start()
     try {
       const read = await executeRequest<{ revision: string; content: string }>(path, { kind: "read" })
@@ -51,10 +53,42 @@ describe("live Session", () => {
         expect(applied.data.transaction.rebased).toBe(true)
       }
       expect(service.model.text).toBe("intro\nalpha\nBETA\n")
+      expect(observedActors).toEqual(["human", "assistant"])
     } finally {
       service.close()
       await server.close()
       lock.release()
     }
+  })
+
+  test("keeps disk and the live Document unchanged when journal publication fails", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agenteditor-journal-failure-"))
+    roots.push(root)
+    const path = join(root, "doc.md")
+    writeFileSync(path, "old\n")
+    const loaded = loadDocument(path)
+    const journalPath = join(root, "missing", "journal.json")
+    const service = new DocumentService({
+      model: loadJournal(journalPath, loaded.text),
+      persistence: new DocumentPersistence(loaded),
+      journalPath,
+    })
+    const baseRevision = service.model.revision
+    const saveErrors: Array<Error | null> = []
+    service.subscribeSaveError((error) => saveErrors.push(error))
+
+    await expect(
+      service.request({ kind: "write", baseRevision, content: "new\n" }),
+    ).rejects.toThrow("ENOENT")
+    expect(readFileSync(path, "utf8")).toBe("old\n")
+    expect(service.model.text).toBe("old\n")
+    expect(saveErrors).toHaveLength(1)
+    expect(saveErrors[0]).toBeInstanceOf(Error)
+
+    mkdirSync(join(root, "missing"))
+    await service.request({ kind: "write", baseRevision, content: "new\n" })
+    expect(readFileSync(path, "utf8")).toBe("new\n")
+    expect(service.model.text).toBe("new\n")
+    expect(saveErrors.at(-1)).toBeNull()
   })
 })

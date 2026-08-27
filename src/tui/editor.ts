@@ -22,6 +22,7 @@ type EditorCallbacks = {
 }
 
 export const EXIT_CONFIRMATION_TIMEOUT_MS = 2_000
+export const TRANSIENT_NOTICE_TIMEOUT_MS = 2_000
 
 export class ExitConfirmation {
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -53,6 +54,31 @@ export class ExitConfirmation {
     clearTimeout(this.timer)
     this.timer = null
     this.onArmedChange(false)
+  }
+}
+
+export class TransientNotice {
+  private timer: ReturnType<typeof setTimeout> | null = null
+
+  constructor(
+    private readonly onChange: (message: string | null) => void,
+    private readonly timeoutMs = TRANSIENT_NOTICE_TIMEOUT_MS,
+  ) {}
+
+  show(message: string): void {
+    if (this.timer !== null) clearTimeout(this.timer)
+    this.onChange(message)
+    this.timer = setTimeout(() => {
+      this.timer = null
+      this.onChange(null)
+    }, this.timeoutMs)
+  }
+
+  cancel(): void {
+    if (this.timer === null) return
+    clearTimeout(this.timer)
+    this.timer = null
+    this.onChange(null)
   }
 }
 
@@ -259,6 +285,31 @@ export class DocumentTextarea extends TextareaRenderable {
   }
 }
 
+export function applyTransactionToEditorState(
+  editor: DocumentTextarea,
+  text: string,
+  transaction: Transaction,
+): void {
+  const cursor = transformOffset(editor.cursorOffset, transaction.edits)
+  const selection = editor.getSelection()
+  const viewport = editor.editorView.getViewport()
+  editor.setText(text)
+  editor.cursorOffset = Math.min(cursor, text.length)
+  if (selection) {
+    editor.setSelection(
+      transformOffset(selection.start, transaction.edits, "before"),
+      transformOffset(selection.end, transaction.edits, "after"),
+    )
+  }
+  editor.editorView.setViewport(
+    viewport.offsetX,
+    viewport.offsetY,
+    viewport.width,
+    viewport.height,
+    false,
+  )
+}
+
 export async function runEditor(inputPath: string): Promise<void> {
   const loaded = loadDocument(inputPath, true)
   const lock = new DocumentLock(loaded.path)
@@ -272,6 +323,7 @@ export async function runEditor(inputPath: string): Promise<void> {
   const session = new SessionServer(service, lock)
   let renderer: Awaited<ReturnType<typeof createCliRenderer>> | null = null
   let exitConfirmation: ExitConfirmation | null = null
+  let transientNotice: TransientNotice | null = null
 
   try {
     await session.start()
@@ -297,7 +349,8 @@ export async function runEditor(inputPath: string): Promise<void> {
     let closing = false
     let syncEditorText: () => void = () => {}
     let exitArmed = false
-    let errorMessage: string | null = null
+    let transientMessage: string | null = null
+    let saveErrorMessage: string | null = null
     const noticeBox = new BoxRenderable(renderer, {
       id: "notice",
       position: "absolute",
@@ -322,14 +375,10 @@ export async function runEditor(inputPath: string): Promise<void> {
     })
     noticeBox.add(noticeText)
     const refreshNotice = (): void => {
-      const message = exitArmed ? "press ctrl+c again to exit" : errorMessage
+      const message = exitArmed ? "press ctrl+c again to exit" : transientMessage ?? saveErrorMessage
       noticeText.content = message ?? ""
       noticeText.fg = exitArmed ? theme.primary : theme.error
       noticeBox.visible = message !== null
-    }
-    const reportError = (message: string): void => {
-      errorMessage = message
-      refreshNotice()
     }
     const finished = new Promise<void>((resolve) => {
       done = resolve
@@ -340,8 +389,7 @@ export async function runEditor(inputPath: string): Promise<void> {
       syncEditorText()
       try {
         service.flush()
-      } catch (error) {
-        reportError(`save failed — ${error instanceof Error ? error.message : String(error)}`)
+      } catch {
         return
       }
       closing = true
@@ -390,26 +438,12 @@ export async function runEditor(inputPath: string): Promise<void> {
     }
 
     const applyTransactionToEditor = (transaction: Transaction): void => {
-      const cursor = transformOffset(editor.cursorOffset, transaction.edits)
-      const selection = editor.getSelection()
-      const viewport = editor.editorView.getViewport()
       syncing = true
-      editor.setText(service.model.text)
-      editor.cursorOffset = Math.min(cursor, service.model.text.length)
-      if (selection) {
-        editor.setSelection(
-          transformOffset(selection.start, transaction.edits, "before"),
-          transformOffset(selection.end, transaction.edits, "after"),
-        )
+      try {
+        applyTransactionToEditorState(editor, service.model.text, transaction)
+      } finally {
+        syncing = false
       }
-      editor.editorView.setViewport(
-        viewport.offsetX,
-        viewport.offsetY,
-        viewport.width,
-        viewport.height,
-        false,
-      )
-      syncing = false
     }
 
     const undo = (): void => {
@@ -422,7 +456,7 @@ export async function runEditor(inputPath: string): Promise<void> {
           redoStack.push(undone.transaction.id)
         }
       } catch (error) {
-        reportError(error instanceof Error ? error.message : String(error))
+        transientNotice?.show(error instanceof Error ? error.message : String(error))
       }
     }
 
@@ -436,9 +470,14 @@ export async function runEditor(inputPath: string): Promise<void> {
           undoStack.push(redone.transaction.id)
         }
       } catch (error) {
-        reportError(error instanceof Error ? error.message : String(error))
+        transientNotice?.show(error instanceof Error ? error.message : String(error))
       }
     }
+    transientNotice = new TransientNotice((message) => {
+      if (closing) return
+      transientMessage = message
+      refreshNotice()
+    })
     exitConfirmation = new ExitConfirmation(
       (armed) => {
         exitArmed = armed
@@ -459,7 +498,7 @@ export async function runEditor(inputPath: string): Promise<void> {
     })
     service.subscribeSaveError((error) => {
       if (closing) return
-      errorMessage = error ? `save failed — ${error.message}` : null
+      saveErrorMessage = error ? `save failed — ${error.message}` : null
       refreshNotice()
     })
 
@@ -473,6 +512,7 @@ export async function runEditor(inputPath: string): Promise<void> {
     renderer = null
   } finally {
     exitConfirmation?.cancel()
+    transientNotice?.cancel()
     if (renderer) renderer.destroy()
     try {
       service.close()

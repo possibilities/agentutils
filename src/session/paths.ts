@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { DomainError } from "../errors.js"
@@ -49,8 +49,8 @@ function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    return isNodeError(error) && error.code === "EPERM"
   }
 }
 
@@ -64,22 +64,46 @@ export class DocumentLock {
   }
 
   acquire(): void {
+    const candidate = `${this.paths.lock}.${process.pid}.${this.token}.candidate`
+    mkdirSync(candidate, { mode: 0o700 })
+    writeFileSync(
+      join(candidate, "owner.json"),
+      JSON.stringify({ pid: process.pid, token: this.token }),
+      { mode: 0o600 },
+    )
     try {
-      mkdirSync(this.paths.lock, { mode: 0o700 })
-    } catch (error) {
-      if (!isNodeError(error) || error.code !== "EEXIST") throw error
-      const owner = readOwner(this.paths.owner)
-      if (owner && pidAlive(owner.pid)) {
-        throw new DomainError("no_active_session", "the Document is already held by another process", {
-          recovery: "connect to its active Session or wait for that process to exit",
-          details: { pid: owner.pid },
-        })
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (existsSync(this.paths.lock)) {
+          const owner = readOwner(this.paths.owner)
+          if (!owner) {
+            throw new DomainError("no_active_session", "the Document lock has no verifiable owner", {
+              recovery: "verify that no agenteditor process is using the Document, then remove the stale lock",
+            })
+          }
+          if (pidAlive(owner.pid)) {
+            throw new DomainError("no_active_session", "the Document is already held by another process", {
+              recovery: "connect to its active Session or wait for that process to exit",
+              details: { pid: owner.pid },
+            })
+          }
+          this.reap(owner)
+          continue
+        }
+
+        try {
+          renameSync(candidate, this.paths.lock)
+          this.held = true
+          return
+        } catch (error) {
+          if (!lockExistsError(error)) throw error
+        }
       }
-      rmSync(this.paths.lock, { recursive: true, force: true })
-      mkdirSync(this.paths.lock, { mode: 0o700 })
+      throw new DomainError("no_active_session", "the Document lock changed while it was being acquired", {
+        recovery: "retry the operation",
+      })
+    } finally {
+      if (existsSync(candidate)) rmSync(candidate, { recursive: true, force: true })
     }
-    writeFileSync(this.paths.owner, JSON.stringify({ pid: process.pid, token: this.token }), { mode: 0o600 })
-    this.held = true
   }
 
   release(): void {
@@ -88,10 +112,46 @@ export class DocumentLock {
     if (owner?.token === this.token) rmSync(this.paths.lock, { recursive: true, force: true })
     this.held = false
   }
+
+  private reap(expected: { pid: number; token: string }): void {
+    const marker = join(this.paths.lock, ".reap")
+    try {
+      writeFileSync(marker, this.token, { flag: "wx", mode: 0o600 })
+    } catch (error) {
+      if (isNodeError(error) && (error.code === "EEXIST" || error.code === "ENOENT")) {
+        throw new DomainError("no_active_session", "the stale Document lock is already being recovered", {
+          recovery: "retry the operation",
+        })
+      }
+      throw error
+    }
+
+    const current = readOwner(this.paths.owner)
+    if (!current || current.pid !== expected.pid || current.token !== expected.token || pidAlive(current.pid)) {
+      if (existsSync(marker)) unlinkSync(marker)
+      throw new DomainError("no_active_session", "the Document lock changed while it was being recovered", {
+        recovery: "retry the operation",
+      })
+    }
+
+    const stale = `${this.paths.lock}.${this.token}.stale`
+    try {
+      renameSync(this.paths.lock, stale)
+      rmSync(stale, { recursive: true, force: true })
+    } catch (error) {
+      if (existsSync(marker)) unlinkSync(marker)
+      if (existsSync(stale)) rmSync(stale, { recursive: true, force: true })
+      throw error
+    }
+  }
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error
+}
+
+function lockExistsError(error: unknown): boolean {
+  return isNodeError(error) && (error.code === "EEXIST" || error.code === "ENOTEMPTY")
 }
 
 export function readSessionMetadata(path: string): SessionMetadata | null {
