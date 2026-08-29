@@ -1,11 +1,13 @@
 export type ErrorCode =
+  | "ambiguous_edit"
   | "bad_request"
-  | "document_exists"
+  | "catalog_unavailable"
   | "document_not_found"
   | "edit_conflict"
-  | "external_change"
-  | "invalid_patch"
-  | "no_active_session"
+  | "edit_target_not_found"
+  | "internal_error"
+  | "invalid_configuration"
+  | "no_focused_document"
   | "stale_revision"
   | "transaction_not_found"
   | "undo_conflict"
@@ -30,5 +32,7 @@ export class DomainError extends Error {
 
 export function asDomainError(error: unknown): DomainError {
   if (error instanceof DomainError) return error
-  return new DomainError("bad_request", error instanceof Error ? error.message : String(error))
+  return new DomainError("internal_error", "agenteditor could not complete the operation", {
+    recovery: "retry once; if the failure persists, inspect the running Surface",
+  })
 }

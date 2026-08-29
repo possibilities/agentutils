@@ -1,24 +1,16 @@
 import {
-  BoxRenderable,
-  TextRenderable,
   TextareaRenderable,
-  createCliRenderer,
   type KeyEvent,
   type RenderContext,
 } from "@opentui/core"
-import { loadJournal } from "../document/journal.js"
 import { applyEdits, transformOffset, type TextEdit } from "../document/edits.js"
-import { DocumentPersistence, loadDocument } from "../document/persistence.js"
 import type { Transaction } from "../document/model.js"
-import { SessionServer } from "../session/ipc.js"
-import { DocumentLock } from "../session/paths.js"
-import { DocumentService } from "../session/service.js"
-import { editorTheme } from "./theme.js"
 
 type EditorCallbacks = {
   quit: () => void
   undo: () => void
   redo: () => void
+  toggleConfiguration?: () => void
 }
 
 export const EXIT_CONFIRMATION_TIMEOUT_MS = 2_000
@@ -99,6 +91,10 @@ export class DocumentTextarea extends TextareaRenderable {
 
     if (key.ctrl && name === "c") {
       this.callbacks?.quit()
+      return true
+    }
+    if ((key.meta || key.option) && name === "m") {
+      this.callbacks?.toggleConfiguration?.()
       return true
     }
     if ((key.ctrl && (name === "-" || name === "_")) || (key.super && name === "z" && !key.shift)) {
@@ -308,227 +304,4 @@ export function applyTransactionToEditorState(
     viewport.height,
     false,
   )
-}
-
-export async function runEditor(inputPath: string): Promise<void> {
-  const loaded = loadDocument(inputPath, true)
-  const lock = new DocumentLock(loaded.path)
-  lock.acquire()
-  const model = loadJournal(lock.paths.journal, loaded.text)
-  const service = new DocumentService({
-    model,
-    persistence: new DocumentPersistence(loaded),
-    journalPath: lock.paths.journal,
-  })
-  const session = new SessionServer(service, lock)
-  let renderer: Awaited<ReturnType<typeof createCliRenderer>> | null = null
-  let exitConfirmation: ExitConfirmation | null = null
-  let transientNotice: TransientNotice | null = null
-
-  try {
-    await session.start()
-    renderer = await createCliRenderer({
-      exitOnCtrlC: false,
-      exitSignals: [],
-      clearOnShutdown: true,
-      useMouse: true,
-      screenMode: "alternate-screen",
-      useKittyKeyboard: { disambiguate: true, alternateKeys: true },
-    })
-    const theme = await editorTheme(renderer)
-    renderer.setBackgroundColor(theme.background)
-    const root = new BoxRenderable(renderer, {
-      id: "root",
-      width: "100%",
-      height: "100%",
-      flexDirection: "column",
-      backgroundColor: theme.background,
-    })
-    let syncing = false
-    let done: () => void = () => {}
-    let closing = false
-    let syncEditorText: () => void = () => {}
-    let exitArmed = false
-    let transientMessage: string | null = null
-    let saveErrorMessage: string | null = null
-    const noticeBox = new BoxRenderable(renderer, {
-      id: "notice",
-      position: "absolute",
-      left: 0,
-      bottom: 0,
-      width: "100%",
-      height: 1,
-      zIndex: 100,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: theme.background,
-      visible: false,
-    })
-    const noticeText = new TextRenderable(renderer, {
-      content: "",
-      width: "auto",
-      height: 1,
-      fg: theme.primary,
-      bg: theme.background,
-      selectable: false,
-      truncate: true,
-    })
-    noticeBox.add(noticeText)
-    const refreshNotice = (): void => {
-      const message = exitArmed ? "press ctrl+c again to exit" : transientMessage ?? saveErrorMessage
-      noticeText.content = message ?? ""
-      noticeText.fg = exitArmed ? theme.primary : theme.error
-      noticeBox.visible = message !== null
-    }
-    const finished = new Promise<void>((resolve) => {
-      done = resolve
-    })
-    const finish = () => {
-      if (closing) return
-      exitConfirmation?.cancel()
-      syncEditorText()
-      try {
-        service.flush()
-      } catch {
-        return
-      }
-      closing = true
-      done()
-    }
-    const undoStack: string[] = []
-    const redoStack: string[] = []
-
-    const editor = new DocumentTextarea(renderer, {
-      id: "document",
-      width: "100%",
-      height: "100%",
-      initialValue: service.model.text,
-      wrapMode: isMarkdown(loaded.path) ? "word" : "none",
-      scrollMargin: 3,
-      textColor: theme.primary,
-      focusedTextColor: theme.primary,
-      backgroundColor: theme.background,
-      focusedBackgroundColor: theme.background,
-      selectionBg: theme.selectionBackground,
-      selectionFg: theme.selectionForeground,
-      cursorColor: theme.focus,
-      tabIndicator: "→",
-      tabIndicatorColor: theme.dim,
-      onContentChange: () => {
-        if (syncing || closing) return
-        queueMicrotask(() => {
-          if (!syncing && !closing) syncEditorText()
-        })
-      },
-      onCursorChange: () => {
-        queueMicrotask(() => {
-          if (closing) return
-          const region = activeLine(service.model.text, editor.cursorOffset)
-          service.setActiveRegion(region.start, region.end)
-        })
-      },
-    })
-    syncEditorText = () => {
-      if (syncing || editor.plainText === service.model.text) return
-      const result = service.applyHumanText(editor.plainText, activeLine(editor.plainText, editor.cursorOffset))
-      if (result.transaction) {
-        undoStack.push(result.transaction.id)
-        redoStack.length = 0
-      }
-    }
-
-    const applyTransactionToEditor = (transaction: Transaction): void => {
-      syncing = true
-      try {
-        applyTransactionToEditorState(editor, service.model.text, transaction)
-      } finally {
-        syncing = false
-      }
-    }
-
-    const undo = (): void => {
-      const id = undoStack.pop()
-      if (!id) return
-      try {
-        const undone = service.undoTransaction(id)
-        if (undone.transaction) {
-          applyTransactionToEditor(undone.transaction)
-          redoStack.push(undone.transaction.id)
-        }
-      } catch (error) {
-        transientNotice?.show(error instanceof Error ? error.message : String(error))
-      }
-    }
-
-    const redo = (): void => {
-      const id = redoStack.pop()
-      if (!id) return
-      try {
-        const redone = service.undoTransaction(id)
-        if (redone.transaction) {
-          applyTransactionToEditor(redone.transaction)
-          undoStack.push(redone.transaction.id)
-        }
-      } catch (error) {
-        transientNotice?.show(error instanceof Error ? error.message : String(error))
-      }
-    }
-    transientNotice = new TransientNotice((message) => {
-      if (closing) return
-      transientMessage = message
-      refreshNotice()
-    })
-    exitConfirmation = new ExitConfirmation(
-      (armed) => {
-        exitArmed = armed
-        refreshNotice()
-      },
-      finish,
-    )
-    editor.callbacks = {
-      quit: () => exitConfirmation?.request(),
-      undo,
-      redo,
-    }
-
-    service.subscribe((transaction) => {
-      if (closing) return
-      if (transaction.actor === "human") return
-      applyTransactionToEditor(transaction)
-    })
-    service.subscribeSaveError((error) => {
-      if (closing) return
-      saveErrorMessage = error ? `save failed — ${error.message}` : null
-      refreshNotice()
-    })
-
-    root.add(editor)
-    root.add(noticeBox)
-    renderer.root.add(root)
-    editor.focus()
-    renderer.start()
-    await finished
-    renderer.destroy()
-    renderer = null
-  } finally {
-    exitConfirmation?.cancel()
-    transientNotice?.cancel()
-    if (renderer) renderer.destroy()
-    try {
-      service.close()
-    } finally {
-      await session.close()
-      lock.release()
-    }
-  }
-}
-
-function activeLine(text: string, cursor: number): { start: number; end: number } {
-  const start = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1
-  const newline = text.indexOf("\n", cursor)
-  return { start, end: newline === -1 ? text.length : newline + 1 }
-}
-
-function isMarkdown(path: string): boolean {
-  return /\.(?:md|mdx|markdown)$/i.test(path)
 }

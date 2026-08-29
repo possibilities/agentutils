@@ -97,7 +97,7 @@ export class DocumentModel {
   snapshot(revision = this._revision): string {
     const entry = this.revisions.get(revision)
     if (!entry) {
-      throw new DomainError("stale_revision", `Revision ${revision} is no longer available`, {
+      throw new DomainError("stale_revision", "the base Revision is no longer available", {
         recovery: "read the Document again and rebuild the Transaction against its current Revision",
         details: { current_revision: this._revision },
       })
@@ -128,7 +128,7 @@ export class DocumentModel {
         const transformed = transformEdits(edits, transaction.edits)
         if (transformed.conflict) {
           throw new DomainError("edit_conflict", "the Transaction overlaps work added after its base Revision", {
-            recovery: "read the current Document and submit a new Transaction",
+            recovery: "read the current Document and apply a new Transaction",
             details: {
               current_revision: this._revision,
               conflicting_transaction: transaction.id,
@@ -190,7 +190,7 @@ export class DocumentModel {
     }
     const target = this.transactions.find((transaction) => transaction.id === transactionId)
     if (!target) {
-      throw new DomainError("transaction_not_found", `Transaction ${transactionId} is not in this Session's history`)
+      throw new DomainError("transaction_not_found", `Transaction ${transactionId} is not in this Document's history`)
     }
     try {
       return this.apply({
@@ -241,7 +241,8 @@ export class DocumentModel {
   }
 
   private missingRevision(revision: string): never {
-    throw new DomainError("stale_revision", `Revision ${revision} is not available`, {
+    void revision
+    throw new DomainError("stale_revision", "the base Revision is not available", {
       recovery: "read the Document again and rebuild the Transaction against its current Revision",
       details: { current_revision: this._revision },
     })

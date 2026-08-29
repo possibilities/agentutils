@@ -1,3 +1,3 @@
-# 0003 — Keyboard-only human surface
+# 0003 — Direct human editing
 
-Human interaction is direct keyboard and mouse editing with automatic persistence; the TUI has no palette, prompts, previews, or manual save. Exit matches fmx: one `ctrl+c` arms a two-second confirmation and a second press within that window flushes and exits, while agents retain only request-response, revision-guarded read, apply, and write operations attributed uniformly as `assistant` rather than caller-supplied identities.
+Human interaction is direct keyboard and mouse Document editing plus model/effort selection in the Configuration panel; there is no palette, prompt workflow, preview, or manual save. `alt+m` toggles and focuses Configuration, while exit remains a two-press `ctrl+c`; agent mutations never move the human cursor, selection, or viewport, and explicit MCP focus changes restore each Document's saved view state.

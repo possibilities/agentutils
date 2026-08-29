@@ -1,3 +1,3 @@
-# 0002 — Bare fxnk surface
+# 0002 — Bare fxnk Surface
 
-The live TUI renders only editable Document text and borrows visual roles solely from the fxnk style guide. It has no interactive command surface; only transient exit confirmation and save-failure notices may cover the Document because persistent chrome would make the editor visually incompatible beside or inside fmx.
+The Surface renders the focused Document, an optional compact Configuration panel, either one alone, or a quiet standby field. It borrows visual roles solely from the fxnk style guide and has no persistent header, footer, filename, path, line-number gutter, help text, send affordance, or surrounding controls.

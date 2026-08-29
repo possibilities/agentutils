@@ -1,26 +1,57 @@
-import { afterEach, describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { describe, expect, test } from "bun:test"
+import { existsSync } from "node:fs"
 import { join } from "node:path"
-import { documentPaths } from "../src/session/paths.js"
+import { makeTempDir } from "./helpers.js"
 
-const roots: string[] = []
-const journals: string[] = []
+const cli = join(import.meta.dir, "..", "src", "cli.ts")
 
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
-  for (const journal of journals.splice(0)) if (existsSync(journal)) rmSync(journal)
+describe("CLI boundary", () => {
+  test("help describes only the singleton Surface and MCP endpoint", async () => {
+    for (const flag of ["--help", "-h"]) {
+      const result = await runCli(flag)
+      expect(result.exitCode).toBe(0)
+      expect(result.stderr).toBe("")
+      expect(result.stdout).toContain("Usage:\n  agenteditor")
+      expect(result.stdout).toContain("http://127.0.0.1:7332/mcp")
+      expect(result.stdout).not.toContain("PATH")
+    }
+  })
+
+  test("paths and former control commands are rejected without touching storage", async () => {
+    const stateDirectory = join(makeTempDir("agenteditor-cli-"), "state-must-not-exist")
+    const privateInput = "/private/example/prompt.md"
+    const invocations = [
+      [privateInput],
+      ["edit", privateInput],
+      ["read", privateInput, "--json"],
+      ["apply", privateInput, "--base", "sha256:old"],
+      ["write", privateInput, "--create"],
+      ["help"],
+    ]
+
+    for (const args of invocations) {
+      const result = await runCli(...args, { AGENTEDITOR_STATE_DIR: stateDirectory })
+      expect(result.exitCode).toBe(2)
+      expect(result.stdout).toBe("")
+      expect(result.stderr).toContain("does not accept paths or control commands")
+      expect(result.stderr).not.toContain(privateInput)
+    }
+    expect(existsSync(stateDirectory)).toBe(false)
+  })
 })
 
-async function cli(args: string[], stdin = ""): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const child = Bun.spawn([process.execPath, "run", "src/cli.ts", ...args], {
-    cwd: import.meta.dir + "/..",
-    stdin: "pipe",
+async function runCli(
+  ...input: Array<string | Record<string, string>>
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const maybeEnvironment = input.at(-1)
+  const environment =
+    typeof maybeEnvironment === "object" ? (input.pop() as Record<string, string>) : {}
+  const child = Bun.spawn([process.execPath, cli, ...(input as string[])], {
+    env: { ...globalThis.process.env, ...environment },
+    stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
   })
-  child.stdin.write(stdin)
-  child.stdin.end()
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -28,109 +59,3 @@ async function cli(args: string[], stdin = ""): Promise<{ exitCode: number; stdo
   ])
   return { exitCode, stdout, stderr }
 }
-
-describe("agent CLI", () => {
-  test("creates, reads, patches, and guards a Document", async () => {
-    const root = mkdtempSync(join(tmpdir(), "agenteditor-cli-"))
-    roots.push(root)
-    const path = join(root, "notes.md")
-    const created = await cli(["write", path, "--create", "--json"], "alpha\nbeta\n")
-    expect(created.exitCode).toBe(0)
-    journals.push(documentPaths(realpathSync(path)).journal)
-    const createdEnvelope = JSON.parse(created.stdout)
-    const base = createdEnvelope.data.revision as string
-
-    const read = await cli(["read", path, "--json"])
-    expect(JSON.parse(read.stdout).data.content).toBe("alpha\nbeta\n")
-
-    const patched = await cli(
-      ["apply", path, "--base", base, "--json"],
-      "@@ -1,2 +1,2 @@\n alpha\n-beta\n+BETA\n",
-    )
-    expect(patched.exitCode).toBe(0)
-    expect(JSON.parse(patched.stdout).data.transaction.rebased).toBe(false)
-    expect(JSON.parse(patched.stdout).data.transaction.actor).toBe("assistant")
-    const afterPatch = await cli(["read", path, "--json"])
-    expect(JSON.parse(afterPatch.stdout).data.content).toBe("alpha\nBETA\n")
-
-    const stale = await cli(["write", path, "--base", base, "--json"], "blind replacement\n")
-    expect(stale.exitCode).toBe(1)
-    expect(JSON.parse(stale.stdout).error.code).toBe("stale_revision")
-  })
-
-  test("requires explicit creation for a missing Document", async () => {
-    const root = mkdtempSync(join(tmpdir(), "agenteditor-missing-"))
-    roots.push(root)
-    const path = join(root, "missing.md")
-    const emptyRevision = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    const result = await cli(["write", path, "--base", emptyRevision, "--json"], "content\n")
-    expect(result.exitCode).toBe(1)
-    expect(JSON.parse(result.stdout).error.code).toBe("document_not_found")
-    expect(existsSync(path)).toBe(false)
-  })
-
-  test("can explicitly create an empty Document", async () => {
-    const root = mkdtempSync(join(tmpdir(), "agenteditor-empty-"))
-    roots.push(root)
-    const path = join(root, "empty.md")
-    const result = await cli(["write", path, "--create", "--json"])
-    expect(result.exitCode).toBe(0)
-    expect(existsSync(path)).toBe(true)
-    journals.push(documentPaths(realpathSync(path)).journal)
-    const ranged = await cli(["read", path, "--lines", "1:1", "--json"])
-    expect(JSON.parse(ranged.stdout).data.range).toEqual({ start: 0, end: 0, total: 0 })
-  })
-
-  test("exposes only the document editing commands", async () => {
-    const root = mkdtempSync(join(tmpdir(), "agenteditor-removed-commands-"))
-    roots.push(root)
-    const path = join(root, "notes.md")
-    const created = await cli(["write", path, "--create", "--json"], "alpha\n")
-    expect(created.exitCode).toBe(0)
-    journals.push(documentPaths(realpathSync(path)).journal)
-    const revision = JSON.parse(created.stdout).data.revision as string
-
-    const search = await cli(["search", path, "alpha", "--json"])
-    expect(search.exitCode).toBe(2)
-
-    const undo = await cli(["undo", path, "--transaction", "tx_removed", "--base", revision, "--json"])
-    expect(undo.exitCode).toBe(2)
-
-    const watch = await cli(["watch", path, "--after", revision, "--jsonl"])
-    expect(watch.exitCode).toBe(2)
-
-    const status = await cli(["status", path, "--json"])
-    expect(status.exitCode).toBe(2)
-
-    const history = await cli(["history", path, "--json"])
-    expect(history.exitCode).toBe(2)
-
-    const proposal = await cli(
-      ["apply", path, "--base", revision, "--propose", "--json"],
-      "@@ -1,1 +1,1 @@\n-alpha\n+ALPHA\n",
-    )
-    expect(proposal.exitCode).toBe(2)
-
-    const message = await cli(
-      ["apply", path, "--base", revision, "--message", "removed", "--json"],
-      "@@ -1,1 +1,1 @@\n-alpha\n+ALPHA\n",
-    )
-    expect(message.exitCode).toBe(2)
-
-    const actor = await cli(
-      ["apply", path, "--base", revision, "--actor", "codex", "--json"],
-      "@@ -1,1 +1,1 @@\n-alpha\n+ALPHA\n",
-    )
-    expect(actor.exitCode).toBe(2)
-
-    const help = await cli(["--help"])
-    expect(help.stdout).not.toContain("agenteditor search")
-    expect(help.stdout).not.toContain("agenteditor undo")
-    expect(help.stdout).not.toContain("agenteditor watch")
-    expect(help.stdout).not.toContain("agenteditor status")
-    expect(help.stdout).not.toContain("agenteditor history")
-    expect(help.stdout).not.toContain("--propose")
-    expect(help.stdout).not.toContain("--message")
-    expect(help.stdout).not.toContain("--actor")
-  })
-})

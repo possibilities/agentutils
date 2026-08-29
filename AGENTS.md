@@ -1,15 +1,17 @@
 # agenteditor agent guidance
 
 Read `CONTEXT.md`, `README.md`, and the ADRs in `docs/adr/` before changing
-the editor or its CLI protocol.
+the Surface or its MCP protocol.
 
 ## Product contract
 
-- The live TUI is only the document. It has no persistent header, footer,
+- The live TUI is the focused Document plus an optional compact Configuration
+  panel, either one alone, or standby. It has no persistent header, footer,
   filename, line-number gutter, status row, help text, or surrounding controls.
-- The TUI has no command palette, prompts, preview, or manual save. Human
-  interaction is keyboard/mouse editing plus a two-press `ctrl+c` exit; only
-  transient exit and save-failure notices may cover the Document.
+- The TUI has no command palette, prompts, preview, manual save, or submission
+  affordance. Human interaction is keyboard/mouse Document editing,
+  model/effort selection, `alt+m`, and a two-press `ctrl+c` exit; only transient
+  exit and save-failure notices may cover the Document.
 - Visual decisions come only from `~/code/fxnk/style/STYLE.md` and
   `~/code/fxnk/style/tokens.json`; no fleet-wide TUI convention applies.
 - Human and agent mutations share one revisioned Document. Never add a blind
@@ -17,8 +19,9 @@ the editor or its CLI protocol.
 - Agent changes must not move the human cursor, selection, or viewport.
 - A successful agent mutation is durable on disk. Conflicts are refusals with
   current state and a recovery, not best-effort merges.
-- Machine output uses the schema-versioned JSON envelope described in the
-  README. Keep stdout parseable and errors stable.
+- Agent automation exists only through the official MCP server. Keep tool and
+  resource schemas typed, domain error codes stable, and filesystem paths out
+  of every MCP result, error, notification, and URI.
 
 ## Development
 
