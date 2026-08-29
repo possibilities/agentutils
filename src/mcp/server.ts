@@ -17,13 +17,18 @@ import type { SurfaceEvent, SurfaceService } from "../surface/service.js"
 export const DEFAULT_MCP_HOST = "127.0.0.1"
 export const DEFAULT_MCP_PORT = 7332
 export const MCP_PATH = "/mcp"
+export const EDITOR_RESOURCE_BASE = "agentutils://editor"
+
+const SURFACE_RESOURCE_URI = `${EDITOR_RESOURCE_BASE}/surface`
+const DOCUMENTS_RESOURCE_URI = `${EDITOR_RESOURCE_BASE}/documents`
+const MODELS_RESOURCE_URI = `${EDITOR_RESOURCE_BASE}/models`
 
 const DocumentIdSchema = z
   .string()
-  .regex(/^doc_[0-9a-f]{32}$/u, "must be an opaque agenteditor Document ID")
+  .regex(/^doc_[0-9a-f]{32}$/u, "must be an opaque AgentUtils Editor Document ID")
 const RevisionSchema = z
   .string()
-  .regex(/^sha256:[0-9a-f]{64}$/u, "must be an agenteditor Revision")
+  .regex(/^sha256:[0-9a-f]{64}$/u, "must be an AgentUtils Editor Revision")
 const TransactionIdSchema = z.string().regex(/^tx_[0-9a-f]{32}$/u)
 
 const PublicDocumentSchema = z
@@ -150,7 +155,7 @@ const CONTENT_WRITE = {
   openWorldHint: false,
 } as const
 
-export function createAgentEditorMcpHandler(service: SurfaceService): {
+export function createEditorMcpHandler(service: SurfaceService): {
   handler: McpHttpHandler
   close: () => Promise<void>
 } {
@@ -178,7 +183,7 @@ export function startMcpHttpServer(
   stop: () => Promise<void>
 } {
   const configuredPort = options.port ?? DEFAULT_MCP_PORT
-  const mcp = createAgentEditorMcpHandler(service)
+  const mcp = createEditorMcpHandler(service)
   const server = Bun.serve({
     hostname: DEFAULT_MCP_HOST,
     port: configuredPort,
@@ -204,13 +209,13 @@ export function startMcpHttpServer(
 
 function buildServer(service: SurfaceService, modern: boolean): McpServer {
   const server = new McpServer(
-    { name: "agenteditor", version: "0.2.0" },
+    { name: "agentutils-editor", version: "0.3.0" },
     {
       ...(modern
         ? { capabilities: { resources: { listChanged: true, subscribe: true } } }
         : {}),
       instructions:
-        "agenteditor is one shared Document Surface. Create or focus a Document before editing. Every content mutation requires the Revision returned by a read; on conflict, reread and retry without forcing. Model and effort are inert per-Document Configuration. Immediately before an external launch, call get_surface_state for one atomic content/configuration snapshot. agenteditor never launches or submits anything.",
+        "AgentUtils Editor is one shared Document Surface. Create or focus a Document before editing. Every content mutation requires the Revision returned by a read; on conflict, reread and retry without forcing. Model and effort are inert per-Document Configuration. Immediately before an external launch, call get_surface_state for one atomic content/configuration snapshot. AgentUtils Editor never launches or submits anything.",
     },
   )
 
@@ -222,9 +227,9 @@ function buildServer(service: SurfaceService, modern: boolean): McpServer {
 function registerResources(server: McpServer, service: SurfaceService): void {
   server.registerResource(
     "surface",
-    "agenteditor://surface",
+    SURFACE_RESOURCE_URI,
     {
-      title: "agenteditor Surface",
+      title: "AgentUtils Editor Surface",
       description: "Focused Document, Surface mode, Configuration, and Catalog status",
       mimeType: "application/json",
       cacheHint: { ttlMs: 0, cacheScope: "private" },
@@ -234,9 +239,9 @@ function registerResources(server: McpServer, service: SurfaceService): void {
 
   server.registerResource(
     "documents",
-    "agenteditor://documents",
+    DOCUMENTS_RESOURCE_URI,
     {
-      title: "agenteditor Documents",
+      title: "AgentUtils Editor Documents",
       description: "All resumable Documents, newest first",
       mimeType: "application/json",
       cacheHint: { ttlMs: 0, cacheScope: "private" },
@@ -246,9 +251,9 @@ function registerResources(server: McpServer, service: SurfaceService): void {
 
   server.registerResource(
     "models",
-    "agenteditor://models",
+    MODELS_RESOURCE_URI,
     {
-      title: "agenteditor model Catalog",
+      title: "AgentUtils Editor model Catalog",
       description: "Models and reasoning efforts loaded at Surface startup",
       mimeType: "application/json",
       cacheHint: { ttlMs: 0, cacheScope: "private" },
@@ -258,7 +263,7 @@ function registerResources(server: McpServer, service: SurfaceService): void {
 
   server.registerResource(
     "document",
-    new ResourceTemplate("agenteditor://documents/{document_id}", {
+    new ResourceTemplate(`${DOCUMENTS_RESOURCE_URI}/{document_id}`, {
       list: () => ({
         resources: service.listDocuments().map((document) => ({
           uri: documentUri(document.document_id),
@@ -277,7 +282,7 @@ function registerResources(server: McpServer, service: SurfaceService): void {
       },
     }),
     {
-      title: "agenteditor Document",
+      title: "AgentUtils Editor Document",
       description: "Document content, Revision, and Configuration",
       mimeType: "application/json",
       cacheHint: { ttlMs: 0, cacheScope: "private" },
@@ -530,21 +535,21 @@ function notify(handler: McpHttpHandler, service: SurfaceService, event: Surface
   switch (event.kind) {
     case "documents_changed":
       handler.notify.resourcesChanged()
-      handler.notify.resourceUpdated("agenteditor://documents")
+      handler.notify.resourceUpdated(DOCUMENTS_RESOURCE_URI)
       handler.notify.resourceUpdated(documentUri(event.documentId))
       break
     case "document_changed":
     case "configuration_changed":
       handler.notify.resourceUpdated(documentUri(event.documentId))
-      handler.notify.resourceUpdated("agenteditor://documents")
-      handler.notify.resourceUpdated("agenteditor://surface")
+      handler.notify.resourceUpdated(DOCUMENTS_RESOURCE_URI)
+      handler.notify.resourceUpdated(SURFACE_RESOURCE_URI)
       break
     case "focus_changed":
     case "mode_changed":
-      handler.notify.resourceUpdated("agenteditor://surface")
+      handler.notify.resourceUpdated(SURFACE_RESOURCE_URI)
       break
     case "save_error":
-      if (event.error === null) handler.notify.resourceUpdated("agenteditor://surface")
+      if (event.error === null) handler.notify.resourceUpdated(SURFACE_RESOURCE_URI)
       break
   }
 
@@ -555,7 +560,7 @@ function notify(handler: McpHttpHandler, service: SurfaceService, event: Surface
 }
 
 function documentUri(documentId: string): string {
-  return `agenteditor://documents/${encodeURIComponent(documentId)}`
+  return `${DOCUMENTS_RESOURCE_URI}/${encodeURIComponent(documentId)}`
 }
 
 function variableString(value: string | string[] | undefined): string {

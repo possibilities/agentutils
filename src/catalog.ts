@@ -75,9 +75,9 @@ export async function loadModelCatalog(options: {
       id: 0,
       params: {
         clientInfo: {
-          name: "agenteditor_catalog",
-          title: "agenteditor Catalog",
-          version: "0.2.0",
+          name: "agentutils_editor_catalog",
+          title: "AgentUtils Editor Catalog",
+          version: "0.3.0",
         },
       },
     })

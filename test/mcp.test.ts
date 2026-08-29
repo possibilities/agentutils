@@ -21,11 +21,11 @@ const catalog: ModelCatalog = {
 
 describe("MCP Surface", () => {
   test("exposes the agent workflow through the official Streamable HTTP client", async () => {
-    const databasePath = join(makeTempDir("agenteditor-mcp-"), "private.sqlite3")
+    const databasePath = join(makeTempDir("agentutils-mcp-"), "private.sqlite3")
     const service = new SurfaceService({ store: new DocumentStore(databasePath), catalog })
     const http = startMcpHttpServer(service, { port: 0 })
     const client = new Client(
-      { name: "agenteditor-test", version: "1.0.0" },
+      { name: "agentutils-editor-test", version: "1.0.0" },
       { versionNegotiation: { mode: "auto" } },
     )
     const surfaceUpdated = Promise.withResolvers<string>()
@@ -41,9 +41,13 @@ describe("MCP Surface", () => {
 
     try {
       await client.connect(new StreamableHTTPClientTransport(new URL(http.url)))
+      expect(client.getServerVersion()).toMatchObject({
+        name: "agentutils-editor",
+        version: "0.3.0",
+      })
       subscription = await client.listen({
         resourcesListChanged: true,
-        resourceSubscriptions: ["agenteditor://surface"],
+        resourceSubscriptions: ["agentutils://editor/surface"],
       })
       const tools = await client.listTools()
       expect(tools.tools.map((tool) => tool.name).sort()).toEqual(
@@ -70,7 +74,9 @@ describe("MCP Surface", () => {
       expect(created.document_id).toMatch(/^doc_[0-9a-f]{32}$/)
       expect(created).not.toHaveProperty("path")
       expect(await withTimeout(resourcesChanged.promise, "resource list change")).toBe(true)
-      expect(await withTimeout(surfaceUpdated.promise, "Surface update")).toBe("agenteditor://surface")
+      expect(await withTimeout(surfaceUpdated.promise, "Surface update")).toBe(
+        "agentutils://editor/surface",
+      )
 
       const editResult = await client.callTool({
         name: "edit_document",
@@ -139,10 +145,10 @@ describe("MCP Surface", () => {
 
       const resources = await client.listResources()
       expect(resources.resources.map((resource) => resource.uri)).toContain(
-        `agenteditor://documents/${created.document_id}`,
+        `agentutils://editor/documents/${created.document_id}`,
       )
       const documentResource = await client.readResource({
-        uri: `agenteditor://documents/${created.document_id}`,
+        uri: `agentutils://editor/documents/${created.document_id}`,
       })
       const serialized = JSON.stringify({ created, state, documentResource })
       expect(serialized).not.toContain(databasePath)
@@ -173,10 +179,10 @@ describe("MCP Surface", () => {
     }
   })
 
-  test("keeps the tool surface available to legacy Streamable HTTP clients", async () => {
+  test("keeps tools available when resource subscriptions are absent", async () => {
     const service = new SurfaceService({ store: new DocumentStore(":memory:"), catalog })
     const http = startMcpHttpServer(service, { port: 0 })
-    const client = new Client({ name: "agenteditor-legacy-test", version: "1.0.0" })
+    const client = new Client({ name: "agentutils-editor-basic-test", version: "1.0.0" })
     try {
       await client.connect(new StreamableHTTPClientTransport(new URL(http.url)))
       expect((await client.listTools()).tools).toHaveLength(10)

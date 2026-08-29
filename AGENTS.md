@@ -1,10 +1,13 @@
-# agenteditor agent guidance
+# AgentUtils agent guidance
 
 Read `CONTEXT.md`, `README.md`, and the ADRs in `docs/adr/` before changing
 the Surface or its MCP protocol.
 
 ## Product contract
 
+- AgentUtils is a command suite with required utility subcommands. The Surface
+  runs only as `agentutils editor`; future utilities are siblings and do not
+  expand the Editor utility's TUI or MCP contract.
 - The live TUI is the focused Document plus an optional outlined Configuration
   picker, either one alone, or standby. It has no persistent header, footer,
   filename, line-number gutter, status row, help text, or surrounding controls.

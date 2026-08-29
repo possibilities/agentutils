@@ -1,7 +1,13 @@
-# agenteditor context
+# AgentUtils context
 
-**Document** — UTF-8 text stored by agenteditor under an opaque Document ID.
-Agents may know its ID, title, content, and metadata, but never a filesystem
+**AgentUtils** — A command suite whose focused utilities are selected by a
+required subcommand. _Avoid_: agenteditor, editor app.
+
+**Editor utility** — `agentutils editor`, the utility that owns the singleton
+Surface and its MCP server. _Avoid_: agenteditor, editor process.
+
+**Document** — UTF-8 text stored by the Editor utility under an opaque Document
+ID. Agents may know its ID, title, content, and metadata, but never a filesystem
 path. _Avoid_: file, buffer, file contents.
 
 **Revision** — A `sha256:` content identity returned by every read and required
@@ -22,8 +28,8 @@ session, daemon, editor process.
 layout preset.
 
 **Configuration** — The model and reasoning effort selected for a Document
-from the startup Catalog. It is inert state; agenteditor never launches an
-agent or submits a Document. _Avoid_: submission, launch request, agent.
+from the startup Catalog. It is inert state; the Editor utility never launches
+an agent or submits a Document. _Avoid_: submission, launch request, agent.
 
 **Catalog** — The immutable-for-the-process set of visible Codex models,
 supported reasoning efforts, and defaults loaded once at startup. _Avoid_:

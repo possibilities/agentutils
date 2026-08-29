@@ -20,7 +20,7 @@ const catalog: ModelCatalog = {
 
 describe("SurfaceService", () => {
   test("persists opaque Documents, focus, mode, Configuration, and view state", () => {
-    const databasePath = join(makeTempDir("agenteditor-surface-"), "state.sqlite3")
+    const databasePath = join(makeTempDir("agentutils-surface-"), "state.sqlite3")
     let service = new SurfaceService({ store: new DocumentStore(databasePath), catalog })
 
     expect(service.getSurfaceState().mode).toBe("standby")
@@ -65,7 +65,7 @@ describe("SurfaceService", () => {
   })
 
   test("rebases disjoint assistant work durably without changing focus or human view", () => {
-    const databasePath = join(makeTempDir("agenteditor-transactions-"), "state.sqlite3")
+    const databasePath = join(makeTempDir("agentutils-transactions-"), "state.sqlite3")
     const service = new SurfaceService({ store: new DocumentStore(databasePath), catalog })
     const first = service.createDocument({ title: "First", content: "alpha\nbeta\ngamma\n" })
     const baseRevision = first.revision

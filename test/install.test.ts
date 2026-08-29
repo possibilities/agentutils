@@ -36,7 +36,7 @@ type InstallLayout = {
 };
 
 function layout(): InstallLayout {
-  const temporaryRoot = makeTempDir("agenteditor-install-");
+  const temporaryRoot = makeTempDir("agentutils-install-");
   const binDir = join(temporaryRoot, "bin");
   const stateDir = join(temporaryRoot, "state");
   mkdirSync(binDir);
@@ -45,7 +45,7 @@ function layout(): InstallLayout {
     root: temporaryRoot,
     binDir,
     stateDir,
-    target: join(binDir, "agenteditor"),
+    target: join(binDir, "agentutils"),
     receipt: join(stateDir, "deployed-sha"),
   };
 }
@@ -61,8 +61,8 @@ async function runInstallScript(
     env: {
       ...process.env,
       ...env,
-      AGENTEDITOR_INSTALL_BIN_DIR: installLayout.binDir,
-      AGENTEDITOR_INSTALL_STATE_DIR: installLayout.stateDir,
+      AGENTUTILS_INSTALL_BIN_DIR: installLayout.binDir,
+      AGENTUTILS_INSTALL_STATE_DIR: installLayout.stateDir,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -90,15 +90,15 @@ function git(...args: string[]): string {
   return result.stdout.toString().trim();
 }
 
-function previousCheckout(origin = "https://github.com/possibilities/agenteditor.git") {
-  const checkout = makeTempDir("agenteditor-previous-");
+function previousCheckout(origin = "https://github.com/possibilities/agentutils.git") {
+  const checkout = makeTempDir("agentutils-previous-");
   mkdirSync(join(checkout, "src"));
   const cli = join(checkout, "src", "cli.ts");
   writeFileSync(cli, "#!/usr/bin/env bun\n");
   chmodSync(cli, 0o755);
   git("-C", checkout, "init", "-q");
-  git("-C", checkout, "config", "user.name", "Agenteditor Test");
-  git("-C", checkout, "config", "user.email", "agenteditor@example.invalid");
+  git("-C", checkout, "config", "user.name", "AgentUtils Test");
+  git("-C", checkout, "config", "user.email", "agentutils@example.invalid");
   git("-C", checkout, "remote", "add", "origin", origin);
   git("-C", checkout, "add", "src/cli.ts");
   git("-C", checkout, "commit", "-qm", "previous checkout");
@@ -143,7 +143,7 @@ test("installer recovers a current source link with an old valid receipt", async
 
 test("installer migrates an exact previous-checkout source symlink", async () => {
   const installLayout = layout();
-  const previous = previousCheckout("git@github.com:possibilities/agenteditor.git");
+  const previous = previousCheckout("git@github.com:possibilities/agentutils.git");
   symlinkSync(previous.cli, installLayout.target);
   writeFileSync(installLayout.receipt, `${previous.sha}\n`, { mode: 0o600 });
 
@@ -175,7 +175,7 @@ test("installer refuses foreign command files and symlinks", async () => {
   expect(fileResult.stderr).toContain("Refusing");
 
   const foreignLink = layout();
-  symlinkSync("/tmp/not-agenteditor", foreignLink.target);
+  symlinkSync("/tmp/not-agentutils", foreignLink.target);
   const linkResult = await runInstall(foreignLink, "--install");
   expect(linkResult.exitCode).toBe(1);
   expect(linkResult.stderr).toContain("Refusing foreign command symlink");
@@ -183,7 +183,7 @@ test("installer refuses foreign command files and symlinks", async () => {
   const forged = layout();
   writeFileSync(
     forged.target,
-    "#!/usr/bin/env bash\n# agenteditor-managed-wrapper\n# agenteditor-source-root: /tmp/forged\nexec true\n",
+    "#!/usr/bin/env bash\n# agentutils-managed-wrapper\n# agentutils-source-root: /tmp/forged\nexec true\n",
     { mode: 0o755 },
   );
   const forgedResult = await runInstall(forged, "--install");
@@ -192,7 +192,7 @@ test("installer refuses foreign command files and symlinks", async () => {
 
 test("installer refuses a previous checkout with a foreign origin", async () => {
   const installLayout = layout();
-  const previous = previousCheckout("https://example.com/possibilities/agenteditor.git");
+  const previous = previousCheckout("https://example.com/possibilities/agentutils.git");
   symlinkSync(previous.cli, installLayout.target);
 
   const result = await runInstall(installLayout, "--install");
@@ -200,12 +200,12 @@ test("installer refuses a previous checkout with a foreign origin", async () => 
   expect(result.stderr).toContain("foreign origin");
 });
 
-const FORK_ORIGIN = "https://github.com/someone-else/agenteditor.git";
+const FORK_ORIGIN = "https://github.com/someone-else/agentutils.git";
 
 // A working checkout of a fork: its own installer copy plus the manifest and
 // lockfile the installer's frozen `bun install` needs.
 function forkCheckout() {
-  const checkout = makeTempDir("agenteditor-fork-");
+  const checkout = makeTempDir("agentutils-fork-");
   mkdirSync(join(checkout, "src"));
   mkdirSync(join(checkout, "scripts"));
   const cli = join(checkout, "src", "cli.ts");
@@ -216,8 +216,8 @@ function forkCheckout() {
   copyFileSync(join(root, "package.json"), join(checkout, "package.json"));
   copyFileSync(join(root, "bun.lock"), join(checkout, "bun.lock"));
   git("-C", checkout, "init", "-q");
-  git("-C", checkout, "config", "user.name", "Agenteditor Test");
-  git("-C", checkout, "config", "user.email", "agenteditor@example.invalid");
+  git("-C", checkout, "config", "user.name", "AgentUtils Test");
+  git("-C", checkout, "config", "user.email", "agentutils@example.invalid");
   git("-C", checkout, "remote", "add", "origin", FORK_ORIGIN);
   git("-C", checkout, "add", "-A");
   git("-C", checkout, "commit", "-qm", "fork checkout");
@@ -231,15 +231,30 @@ test("a fork installs from its own checkout with the expected-origin override", 
   const refused = await runInstallScript(fork.installScript, installLayout, {}, "--install");
   expect(refused.exitCode).toBe(1);
   expect(refused.stderr).toContain("foreign origin");
+  expect(existsSync(installLayout.target)).toBe(false);
+  expect(existsSync(installLayout.receipt)).toBe(false);
 
   const result = await runInstallScript(
     fork.installScript,
     installLayout,
-    { AGENTEDITOR_INSTALL_EXPECTED_ORIGIN: FORK_ORIGIN },
+    { AGENTUTILS_INSTALL_EXPECTED_ORIGIN: FORK_ORIGIN },
     "--install",
   );
   expect(result.exitCode).toBe(0);
   expect(readlinkSync(installLayout.target)).toBe(realpathSync(fork.cli));
+});
+
+test("a foreign checkout cannot replace a managed installation", async () => {
+  const installLayout = layout();
+  expect((await runInstall(installLayout, "--install")).exitCode).toBe(0);
+  const fork = forkCheckout();
+
+  const refused = await runInstallScript(fork.installScript, installLayout, {}, "--install");
+
+  expect(refused.exitCode).toBe(1);
+  expect(refused.stderr).toContain("foreign origin");
+  expect(readlinkSync(installLayout.target)).toBe(source);
+  expect(readFileSync(installLayout.receipt, "utf8")).toBe(`${expectedSha}\n`);
 });
 
 test("the override cannot make an upstream checkout pass as a fork", async () => {
@@ -247,7 +262,7 @@ test("the override cannot make an upstream checkout pass as a fork", async () =>
   const result = await runInstallScript(
     script,
     installLayout,
-    { AGENTEDITOR_INSTALL_EXPECTED_ORIGIN: FORK_ORIGIN },
+    { AGENTUTILS_INSTALL_EXPECTED_ORIGIN: FORK_ORIGIN },
     "--install",
   );
   expect(result.exitCode).toBe(1);

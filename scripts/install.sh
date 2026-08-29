@@ -4,14 +4,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 SOURCE="$ROOT/src/cli.ts"
-BIN_DIR="${AGENTEDITOR_INSTALL_BIN_DIR:-$HOME/.local/bin}"
-STATE_DIR="${AGENTEDITOR_INSTALL_STATE_DIR:-$HOME/.local/state/agenteditor}"
-TARGET="$BIN_DIR/agenteditor"
+BIN_DIR="${AGENTUTILS_INSTALL_BIN_DIR:-$HOME/.local/bin}"
+STATE_DIR="${AGENTUTILS_INSTALL_STATE_DIR:-$HOME/.local/state/agentutils}"
+TARGET="$BIN_DIR/agentutils"
 RECEIPT="$STATE_DIR/deployed-sha"
-UPSTREAM_ORIGIN="https://github.com/possibilities/agenteditor.git"
+UPSTREAM_ORIGIN="https://github.com/possibilities/agentutils.git"
 # A fork installs from its own checkout, so the origin this refuses to
 # install from has to be overridable; the upstream spelling is the default.
-EXPECTED_ORIGIN="${AGENTEDITOR_INSTALL_EXPECTED_ORIGIN:-$UPSTREAM_ORIGIN}"
+EXPECTED_ORIGIN="${AGENTUTILS_INSTALL_EXPECTED_ORIGIN:-$UPSTREAM_ORIGIN}"
 TMP_PATH=""
 
 cleanup() {
@@ -25,11 +25,11 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/install.sh [--install|--uninstall|--help]
 
-With no option, installs agenteditor. Installation runs Bun's frozen dependency
-install, links ~/.local/bin/agenteditor to this checkout, and writes the deployed
-Git SHA to ~/.local/state/agenteditor/deployed-sha.
+With no option, installs agentutils. Installation runs Bun's frozen dependency
+install, links ~/.local/bin/agentutils to this checkout, and writes the deployed
+Git SHA to ~/.local/state/agentutils/deployed-sha.
 
-Set AGENTEDITOR_INSTALL_BIN_DIR and AGENTEDITOR_INSTALL_STATE_DIR to use other
+Set AGENTUTILS_INSTALL_BIN_DIR and AGENTUTILS_INSTALL_STATE_DIR to use other
 locations (including for hermetic tests).
 USAGE
 }
@@ -144,10 +144,10 @@ normalized_origin() {
   local origin="$1"
   origin="${origin%/}"
   case "$origin" in
-    https://github.com/possibilities/agenteditor|https://github.com/possibilities/agenteditor.git)
+    https://github.com/possibilities/agentutils|https://github.com/possibilities/agentutils.git)
       printf '%s\n' "$UPSTREAM_ORIGIN"
       ;;
-    git@github.com:possibilities/agenteditor|git@github.com:possibilities/agenteditor.git|ssh://git@github.com/possibilities/agenteditor|ssh://git@github.com/possibilities/agenteditor.git)
+    git@github.com:possibilities/agentutils|git@github.com:possibilities/agentutils.git|ssh://git@github.com/possibilities/agentutils|ssh://git@github.com/possibilities/agentutils.git)
       printf '%s\n' "$UPSTREAM_ORIGIN"
       ;;
     *)
@@ -164,11 +164,11 @@ validate_managed_checkout() {
   [[ "$root" == /* ]] || die "Refusing managed command with a non-absolute source root: $root"
   validate_path "$root" "source root"
   validate_directory "$root" "source root"
-  validate_safe_file "$source" "agenteditor source command"
-  [[ -x "$source" ]] || die "Refusing non-executable agenteditor source command: $source"
-  sha="$(checkout_head "$root")" || die "Refusing agenteditor source outside an exact Git checkout: $root"
-  origin="$(git -C "$root" remote get-url origin 2>/dev/null)" || die "Refusing agenteditor source without an origin: $root"
-  [[ "$(normalized_origin "$origin")" == "$EXPECTED_ORIGIN" ]] || die "Refusing agenteditor source with foreign origin: $root"
+  validate_safe_file "$source" "agentutils source command"
+  [[ -x "$source" ]] || die "Refusing non-executable agentutils source command: $source"
+  sha="$(checkout_head "$root")" || die "Refusing agentutils source outside an exact Git checkout: $root"
+  origin="$(git -C "$root" remote get-url origin 2>/dev/null)" || die "Refusing agentutils source without an origin: $root"
+  [[ "$(normalized_origin "$origin")" == "$EXPECTED_ORIGIN" ]] || die "Refusing agentutils source with foreign origin: $root"
   MANAGED_ROOT="$root"
   MANAGED_SHA="$sha"
 }
@@ -217,14 +217,12 @@ receipt_exists() {
   [[ -e "$RECEIPT" || -L "$RECEIPT" ]]
 }
 
-install_agenteditor() {
+install_agentutils() {
   local sha
 
   command -v bun >/dev/null 2>&1 || die "Bun is required but was not found in PATH"
-  validate_path "$SOURCE" "source command"
-  validate_safe_file "$SOURCE" "source command"
-  [[ -x "$SOURCE" ]] || die "Source command is not executable: $SOURCE"
-  sha="$(checkout_head "$ROOT")" || die "Could not derive a lowercase 40-hex Git HEAD from $ROOT"
+  validate_managed_checkout "$ROOT"
+  sha="$MANAGED_SHA"
 
   ensure_directory "$BIN_DIR" "bin" 755
   ensure_directory "$STATE_DIR" "state" 700
@@ -242,7 +240,7 @@ install_agenteditor() {
 
   (cd "$ROOT" && bun install --frozen-lockfile)
 
-  TMP_PATH="$BIN_DIR/.agenteditor-link.$$.$RANDOM"
+  TMP_PATH="$BIN_DIR/.agentutils-link.$$.$RANDOM"
   [[ ! -e "$TMP_PATH" && ! -L "$TMP_PATH" ]] || die "Refusing unsafe temporary command path: $TMP_PATH"
   ln -s -- "$SOURCE" "$TMP_PATH"
   mv -f -- "$TMP_PATH" "$TARGET"
@@ -267,7 +265,7 @@ install_agenteditor() {
   echo "Installed $TARGET at $sha"
 }
 
-uninstall_agenteditor() {
+uninstall_agentutils() {
   local have_state=0 removed=0
 
   validate_path "$BIN_DIR" "bin"
@@ -299,9 +297,9 @@ uninstall_agenteditor() {
   fi
 
   if (( removed )); then
-    echo "Removed agenteditor installation"
+    echo "Removed agentutils installation"
   else
-    echo "Agenteditor is not installed"
+    echo "AgentUtils is not installed"
   fi
 }
 
@@ -311,10 +309,10 @@ fi
 
 case "${1:---install}" in
   --install)
-    install_agenteditor
+    install_agentutils
     ;;
   --uninstall)
-    uninstall_agenteditor
+    uninstall_agentutils
     ;;
   --help|-h)
     usage

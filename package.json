@@ -1,17 +1,17 @@
 {
-  "name": "agenteditor",
-  "version": "0.2.0",
+  "name": "agentutils",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "bin": {
-    "agenteditor": "./src/cli.ts"
+    "agentutils": "./src/cli.ts"
   },
   "scripts": {
-    "start": "bun run src/cli.ts",
+    "start": "bun run src/cli.ts editor",
     "demo:configuration": "bun run src/tui/configuration-demo.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "build": "bun build ./src/cli.ts --compile --outfile ./dist/agenteditor"
+    "build": "bun build ./src/cli.ts --compile --outfile ./dist/agentutils"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",

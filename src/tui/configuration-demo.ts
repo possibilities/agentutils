@@ -167,7 +167,7 @@ if (import.meta.main) {
   try {
     await runDemo()
   } catch {
-    process.stderr.write("agenteditor: unable to start the Configuration picker demo\n")
+    process.stderr.write("agentutils editor: unable to start the Configuration picker demo\n")
     process.exitCode = 1
   }
 }

@@ -1,33 +1,34 @@
-# agenteditor
+# AgentUtils
 
-`agenteditor` is a singleton collaborative Document Surface. A human edits the
-focused Document in a bare OpenTUI interface; agents create, resume, focus,
-read, and revise Documents through MCP.
+`agentutils` is a command suite for focused agent utilities. Its first utility,
+`agentutils editor`, is a singleton collaborative Document Surface: a human
+edits the focused Document in a bare OpenTUI interface while agents create,
+resume, focus, read, and revise Documents through MCP.
 
 The optional bottom panel stores a model and reasoning effort for the focused
-Document. That state is intentionally inert. agenteditor never sends a prompt,
-launches an agent, or knows whether a Document will be used as a prompt.
+Document. That state is intentionally inert. The Editor utility never sends a
+prompt, launches an agent, or knows whether a Document will be used as a prompt.
 
 ## Connect an agent
 
 Start the Surface first:
 
 ```sh
-agenteditor
+agentutils editor
 ```
 
 It serves Streamable HTTP MCP at `http://127.0.0.1:7332/mcp`. For Codex, add:
 
 ```toml
-[mcp_servers.agenteditor]
+[mcp_servers.agentutils_editor]
 url = "http://127.0.0.1:7332/mcp"
 required = true
 ```
 
 The MCP server is part of the TUI process: if the Surface is not running, the
 MCP server is not running. It binds only to IPv4 loopback and rejects unknown
-Host and Origin values. The executable has no path or control arguments, and
-there is no Unix-socket automation surface.
+Host and Origin values. The Editor utility has no path or control arguments
+after its subcommand, and there is no Unix-socket automation surface.
 
 ## Core workflow
 
@@ -42,7 +43,7 @@ there is no Unix-socket automation surface.
    one atomic snapshot containing the focused Document content, Revision,
    model, and effort.
 6. Pass that snapshot to the separate tool that owns agent launch or prompt
-   submission. Nothing in agenteditor performs that final step.
+   submission. Nothing in the Editor utility performs that final step.
 
 MCP resource notifications can tell a client that state changed, but they do
 not guarantee that a language model's context was refreshed. The explicit
@@ -52,10 +53,10 @@ not guarantee that a language model's context was refreshed. The explicit
 
 | URI | Contents |
 | --- | --- |
-| `agenteditor://surface` | Surface mode, focused Document metadata, Configuration, and Catalog status |
-| `agenteditor://documents` | resumable Documents, newest first |
-| `agenteditor://documents/{document_id}` | one Document's content, Revision, and Configuration |
-| `agenteditor://models` | startup Catalog and supported effort values |
+| `agentutils://editor/surface` | Surface mode, focused Document metadata, Configuration, and Catalog status |
+| `agentutils://editor/documents` | resumable Documents, newest first |
+| `agentutils://editor/documents/{document_id}` | one Document's content, Revision, and Configuration |
+| `agentutils://editor/models` | startup Catalog and supported effort values |
 
 Clients that negotiate modern MCP resource-subscription capabilities may
 subscribe to `surface` and individual Document resources. The server emits
@@ -197,10 +198,10 @@ mode, Configuration, and per-Document view state survive restart.
 
 ## Storage and privacy boundary
 
-agenteditor uses one private SQLite database. Its physical location is an
-implementation detail and is never included in MCP data, errors, logs, or
-resource URIs. There is no file import, path argument, or compatibility layer
-for the former file-backed CLI.
+The Editor utility uses one private SQLite database. Its physical location is
+an implementation detail and is never included in MCP data, errors, logs, or
+resource URIs. There is no file import, path argument, legacy state migration,
+or compatibility layer for an earlier CLI.
 
 ## Development
 

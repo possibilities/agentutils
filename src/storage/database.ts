@@ -68,9 +68,9 @@ type SurfaceRow = {
 }
 
 export function defaultDatabasePath(): string {
-  const explicitRoot = process.env.AGENTEDITOR_STATE_DIR
-  const stateRoot = explicitRoot ?? join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"), "agenteditor")
-  return join(stateRoot, "agenteditor.sqlite3")
+  const explicitRoot = process.env.AGENTUTILS_EDITOR_STATE_DIR
+  const stateRoot = explicitRoot ?? join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"), "agentutils")
+  return join(stateRoot, "editor.sqlite3")
 }
 
 export class DocumentStore {

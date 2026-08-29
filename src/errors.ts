@@ -32,7 +32,7 @@ export class DomainError extends Error {
 
 export function asDomainError(error: unknown): DomainError {
   if (error instanceof DomainError) return error
-  return new DomainError("internal_error", "agenteditor could not complete the operation", {
+  return new DomainError("internal_error", "AgentUtils Editor could not complete the operation", {
     recovery: "retry once; if the failure persists, inspect the running Surface",
   })
 }
