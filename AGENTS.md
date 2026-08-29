@@ -10,8 +10,9 @@ the Surface or its MCP protocol.
   filename, line-number gutter, status row, help text, or surrounding controls.
 - The TUI has no command palette, prompts, preview, manual save, or submission
   affordance. Human interaction is keyboard/mouse Document editing,
-  model/effort selection, `alt+m`, and a two-press `ctrl+c` exit; only transient
-  exit and save-failure notices may cover the Document.
+  model/effort selection when Configuration is focused, and a two-press
+  `ctrl+c` exit; only transient exit and save-failure notices may cover the
+  Document. There is no TUI binding for showing or focusing Configuration.
 - Visual decisions come only from `~/code/fxnk/style/STYLE.md` and
   `~/code/fxnk/style/tokens.json`; no fleet-wide TUI convention applies.
 - Human and agent mutations share one revisioned Document. Never add a blind

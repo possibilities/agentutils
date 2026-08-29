@@ -40,14 +40,10 @@ test("Tab selects a field and arrows cycle only that field", async () => {
     exitSignals: [],
   })
   const cycles: Array<{ field: "model" | "effort"; delta: -1 | 1 }> = []
-  let toggles = 0
   let quits = 0
   const panel = new ConfigurationPanel(setup.renderer, {
     theme: themeFor("dark"),
     onCycle: (field, delta) => cycles.push({ field, delta }),
-    onToggle: () => {
-      toggles += 1
-    },
     onQuit: () => {
       quits += 1
     },
@@ -71,9 +67,12 @@ test("Tab selects a field and arrows cycle only that field", async () => {
     ])
 
     setup.mockInput.pressKey("m", { meta: true })
+    await setup.flush()
+    expect(panel.selectedField).toBe("effort")
+    expect(cycles).toHaveLength(2)
+
     setup.mockInput.pressKey("c", { ctrl: true })
     await setup.flush()
-    expect(toggles).toBe(1)
     expect(quits).toBe(1)
   } finally {
     setup.renderer.destroy()
@@ -109,7 +108,6 @@ test("Configuration owns the only chromatic focus mark and suppresses the Docume
   const panel = new ConfigurationPanel(setup.renderer, {
     theme,
     onCycle: () => {},
-    onToggle: () => {},
     onQuit: () => {},
   })
   panel.setConfiguration("gpt-5.6-sol", "high")

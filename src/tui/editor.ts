@@ -10,7 +10,6 @@ type EditorCallbacks = {
   quit: () => void
   undo: () => void
   redo: () => void
-  toggleConfiguration?: () => void
 }
 
 export const EXIT_CONFIRMATION_TIMEOUT_MS = 2_000
@@ -101,10 +100,6 @@ export class DocumentTextarea extends TextareaRenderable {
 
     if (key.ctrl && name === "c") {
       this.callbacks?.quit()
-      return true
-    }
-    if ((key.meta || key.option) && name === "m") {
-      this.callbacks?.toggleConfiguration?.()
       return true
     }
     if ((key.ctrl && (name === "-" || name === "_")) || (key.super && name === "z" && !key.shift)) {

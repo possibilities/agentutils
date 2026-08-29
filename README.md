@@ -179,11 +179,12 @@ or submission.
 
 ## Human Surface
 
-The TUI normally contains only Document text. `alt+m` toggles the compact
-Configuration panel; while it has focus, `tab` changes field and arrow keys
-cycle valid values. The panel contains no send control. The first `ctrl+c`
-shows a transient exit notice; a second press within two seconds flushes and
-exits.
+The TUI normally contains only Document text. Agents control Configuration
+visibility through `set_surface_mode`; there is no TUI shortcut for showing or
+focusing the panel. While Configuration has focus, `tab` changes field and
+arrow keys cycle valid values. The panel contains no send control. The first
+`ctrl+c` shows a transient exit notice; a second press within two seconds
+flushes and exits.
 
 Human edits save automatically. A first launch with no focused Document shows
 standby; MCP creation or focus supplies the work. The last focused Document,

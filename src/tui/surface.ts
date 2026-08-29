@@ -24,7 +24,6 @@ type ConfigurationField = "model" | "effort"
 type ConfigurationPanelOptions = {
   theme: EditorTheme
   onCycle: (field: ConfigurationField, delta: -1 | 1) => void
-  onToggle: () => void
   onQuit: () => void
 }
 
@@ -121,10 +120,6 @@ export class ConfigurationPanel extends BoxRenderable {
     const name = key.name.toLowerCase()
     if (key.ctrl && name === "c") {
       this.options.onQuit()
-      return true
-    }
-    if ((key.meta || key.option) && name === "m") {
-      this.options.onToggle()
       return true
     }
     if (name === "tab") {
@@ -371,25 +366,6 @@ export async function runSurface(service: SurfaceService): Promise<void> {
     }
 
     let configuration: ConfigurationPanel | null = null
-    const toggleConfiguration = (): void => {
-      try {
-        const state = service.getSurfaceState(false)
-        if (!state.focused_document || !configuration) return
-        if (configuration.visible && configuration.focused) {
-          service.setSurfaceMode("document")
-          return
-        }
-        if (configuration.visible) {
-          configuration.focus()
-          return
-        }
-        service.setSurfaceMode("document_configuration")
-        configuration.focus()
-      } catch {
-        transientNotice?.show("save failed")
-      }
-    }
-
     configuration = new ConfigurationPanel(renderer, {
       theme,
       onCycle: (field, delta) => {
@@ -399,7 +375,6 @@ export async function runSurface(service: SurfaceService): Promise<void> {
           transientNotice?.show("save failed")
         }
       },
-      onToggle: toggleConfiguration,
       onQuit: () => exitConfirmation?.request(),
     })
     const panel = configuration
@@ -503,7 +478,6 @@ export async function runSurface(service: SurfaceService): Promise<void> {
       quit: () => exitConfirmation?.request(),
       undo,
       redo,
-      toggleConfiguration,
     }
 
     unsubscribe = service.subscribe((event) => {
@@ -555,10 +529,6 @@ export async function runSurface(service: SurfaceService): Promise<void> {
         key.preventDefault()
         key.stopPropagation()
         exitConfirmation?.request()
-      } else if ((key.meta || key.option) && name === "m") {
-        key.preventDefault()
-        key.stopPropagation()
-        toggleConfiguration()
       }
     }
     const frameHandler = (): void => {
