@@ -10,8 +10,6 @@ import {
 } from "@opentui/core"
 import { editorTheme, type EditorTheme } from "./theme.js"
 
-export const CONFIGURATION_DEMO_DESIGNS = ["outlined_split", "filled_split", "stacked"] as const
-export type ConfigurationDemoDesign = (typeof CONFIGURATION_DEMO_DESIGNS)[number]
 type ConfigurationField = "model" | "effort"
 
 const MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const
@@ -21,12 +19,6 @@ const EFFORTS: Readonly<Record<(typeof MODELS)[number], readonly string[]>> = {
   "gpt-5.6-luna": ["low", "medium", "high", "xhigh", "max"],
 }
 
-const DESIGN_LABELS: Readonly<Record<ConfigurationDemoDesign, string>> = {
-  outlined_split: "1 outlined split",
-  filled_split: "2 filled split",
-  stacked: "3 stacked outline",
-}
-
 type DemoConfiguration = {
   model: (typeof MODELS)[number]
   effort: string
@@ -34,7 +26,6 @@ type DemoConfiguration = {
 
 type ConfigurationPickerDemoOptions = {
   theme: EditorTheme
-  design?: ConfigurationDemoDesign
   onRequestDocumentFocus: () => void
   onConfigurationChange?: (configuration: DemoConfiguration) => void
 }
@@ -42,14 +33,12 @@ type ConfigurationPickerDemoOptions = {
 class DemoSelectorButton extends BoxRenderable {
   private readonly text: TextRenderable
   private theme: EditorTheme
-  private design: ConfigurationDemoDesign
 
   constructor(
     ctx: RenderContext,
     readonly field: ConfigurationField,
     private readonly picker: ConfigurationPickerDemo,
     theme: EditorTheme,
-    design: ConfigurationDemoDesign,
   ) {
     super(ctx, {
       id: `configuration-demo-${field}`,
@@ -65,7 +54,6 @@ class DemoSelectorButton extends BoxRenderable {
       shouldFill: true,
     })
     this.theme = theme
-    this.design = design
     this.text = new TextRenderable(ctx, {
       width: "100%",
       height: 1,
@@ -82,7 +70,7 @@ class DemoSelectorButton extends BoxRenderable {
       event.preventDefault()
       event.stopPropagation()
     }
-    this.applyDesign()
+    this.refresh()
   }
 
   override focus(): void {
@@ -121,33 +109,19 @@ class DemoSelectorButton extends BoxRenderable {
     return false
   }
 
-  setDesign(design: ConfigurationDemoDesign): void {
-    this.design = design
-    this.applyDesign()
-  }
-
   setTheme(theme: EditorTheme): void {
     this.theme = theme
     this.borderColor = theme.divider
     this.focusedBorderColor = theme.focus
-    this.applyDesign()
+    this.backgroundColor = theme.background
+    this.text.bg = theme.background
+    this.refresh()
   }
 
   refresh(): void {
     if (this.text.isDestroyed) return
     const rawValue = this.picker.configuration[this.field]
     const marker = this.focused ? "▎" : " "
-    if (this.design === "filled_split") {
-      const value = fitValue(rawValue, Math.max(1, this.width - 2))
-      this.text.content = new StyledText([
-        fg(this.focused ? this.theme.focus : this.theme.dim)(`${marker} `),
-        fg(this.theme.secondary)(this.field),
-        fg(this.theme.dim)("  ▴\n  "),
-        this.focused ? bold(fg(this.theme.primary)(value)) : fg(this.theme.primary)(value),
-      ])
-      return
-    }
-
     const value = fitValue(rawValue, Math.max(1, this.width - this.field.length - 7))
     this.text.content = new StyledText([
       fg(this.focused ? this.theme.focus : this.theme.dim)(marker),
@@ -161,15 +135,6 @@ class DemoSelectorButton extends BoxRenderable {
     super.onResize(width, height)
     this.refresh()
   }
-
-  private applyDesign(): void {
-    const filled = this.design === "filled_split"
-    this.border = !filled
-    this.backgroundColor = filled ? this.theme.surface : this.theme.background
-    this.text.bg = filled ? this.theme.surface : this.theme.background
-    this.text.height = filled ? 2 : 1
-    this.refresh()
-  }
 }
 
 export class ConfigurationPickerDemo extends BoxRenderable {
@@ -180,24 +145,21 @@ export class ConfigurationPickerDemo extends BoxRenderable {
   private readonly menuRows: Array<{ box: BoxRenderable; text: TextRenderable }> = []
   private readonly options: ConfigurationPickerDemoOptions
   private theme: EditorTheme
-  private currentDesign: ConfigurationDemoDesign
   private active: ConfigurationField | null = null
   private highlighted = 0
   private value: DemoConfiguration = { model: MODELS[0], effort: EFFORTS[MODELS[0]][2]! }
 
   constructor(ctx: RenderContext, options: ConfigurationPickerDemoOptions) {
-    const design = options.design ?? "outlined_split"
     super(ctx, {
       id: "configuration-picker-demo",
       width: "100%",
-      height: controlsHeight(design),
+      height: 3,
       flexDirection: "column",
       flexShrink: 0,
       backgroundColor: options.theme.background,
     })
     this.options = options
     this.theme = options.theme
-    this.currentDesign = design
 
     this.menu = new BoxRenderable(ctx, {
       id: "configuration-demo-menu",
@@ -214,13 +176,13 @@ export class ConfigurationPickerDemo extends BoxRenderable {
     this.controls = new BoxRenderable(ctx, {
       id: "configuration-demo-controls",
       width: "100%",
-      height: controlsHeight(design),
-      flexDirection: design === "stacked" ? "column" : "row",
+      height: 3,
+      flexDirection: "row",
       flexShrink: 0,
       backgroundColor: options.theme.background,
     })
-    this.modelButton = new DemoSelectorButton(ctx, "model", this, options.theme, design)
-    this.effortButton = new DemoSelectorButton(ctx, "effort", this, options.theme, design)
+    this.modelButton = new DemoSelectorButton(ctx, "model", this, options.theme)
+    this.effortButton = new DemoSelectorButton(ctx, "effort", this, options.theme)
 
     const maximumRows = Math.max(MODELS.length, ...Object.values(EFFORTS).map((efforts) => efforts.length))
     for (let index = 0; index < maximumRows; index += 1) {
@@ -256,11 +218,6 @@ export class ConfigurationPickerDemo extends BoxRenderable {
     this.controls.add(this.effortButton)
     this.add(this.menu)
     this.add(this.controls)
-    this.setDesign(design)
-  }
-
-  get design(): ConfigurationDemoDesign {
-    return this.currentDesign
   }
 
   get activeField(): ConfigurationField | null {
@@ -281,19 +238,6 @@ export class ConfigurationPickerDemo extends BoxRenderable {
 
   get menuHeight(): number {
     return this.menu.visible ? this.fieldOptions().length + 2 : 0
-  }
-
-  setDesign(design: ConfigurationDemoDesign): void {
-    this.currentDesign = design
-    const stacked = design === "stacked"
-    const height = controlsHeight(design)
-    this.controls.flexDirection = stacked ? "column" : "row"
-    this.controls.height = height
-    this.modelButton.width = stacked ? "100%" : "50%"
-    this.effortButton.width = stacked ? "100%" : "50%"
-    this.modelButton.setDesign(design)
-    this.effortButton.setDesign(design)
-    this.updateHeight()
   }
 
   setTheme(theme: EditorTheme): void {
@@ -394,16 +338,8 @@ export class ConfigurationPickerDemo extends BoxRenderable {
   }
 
   private updateHeight(): void {
-    this.height = controlsHeight(this.currentDesign) + this.menuHeight
+    this.height = 3 + this.menuHeight
   }
-}
-
-export function configurationDemoLabel(design: ConfigurationDemoDesign): string {
-  return DESIGN_LABELS[design]
-}
-
-function controlsHeight(design: ConfigurationDemoDesign): number {
-  return design === "stacked" ? 6 : 3
 }
 
 function wrapIndex(index: number, length: number): number {
@@ -440,7 +376,7 @@ async function runDemo(): Promise<void> {
   })
   const header = new TextRenderable(renderer, {
     width: "100%",
-    height: 2,
+    height: 1,
     content: "",
     fg: theme.primary,
     bg: theme.background,
@@ -460,8 +396,12 @@ async function runDemo(): Promise<void> {
     width: "100%",
     height: "100%",
     content:
-      "Draft a prompt that asks an agent to review a release candidate.\n\n" +
-      "The selector menu below participates in layout, so this Document becomes shorter instead of being covered.",
+      "Draft a prompt that asks an agent to review a release candidate. Ask it to inspect implementation, " +
+      "tests, release notes, and operator behavior; identify regressions and missing verification; then report " +
+      "findings with evidence. Distinguish confirmed failures from suspicions.\n\n" +
+      "The selector menu below participates in layout, so opening it makes this Document shorter instead of " +
+      "covering the text. This longer sample exposes wrapping and viewport pressure at narrow widths and " +
+      "shallow heights, showing which lines remain visible as controls expand.",
     fg: theme.primary,
     bg: theme.background,
     selectable: false,
@@ -480,18 +420,10 @@ async function runDemo(): Promise<void> {
     event.stopPropagation()
   }
   const refreshHeader = (): void => {
-    const labels = CONFIGURATION_DEMO_DESIGNS.map((design) =>
-      design === picker.design
-        ? bold(fg(theme.primary)(configurationDemoLabel(design)))
-        : fg(theme.secondary)(configurationDemoLabel(design)),
-    )
-    const chunks = []
-    for (const [index, label] of labels.entries()) {
-      if (index > 0) chunks.push(fg(theme.dim)("  ·  "))
-      chunks.push(label)
-    }
-    chunks.push(fg(theme.dim)("\nclick control/option  ·  1/2/3 design  ·  esc closes  ·  ctrl+c exits"))
-    header.content = new StyledText(chunks)
+    header.content = new StyledText([
+      bold(fg(theme.primary)("outlined split")),
+      fg(theme.dim)("  ·  click control/option  ·  esc closes  ·  ctrl+c exits"),
+    ])
   }
   refreshHeader()
 
@@ -506,21 +438,7 @@ async function runDemo(): Promise<void> {
       key.preventDefault()
       key.stopPropagation()
       resolveDone()
-      return
     }
-    const design =
-      name === "1"
-        ? CONFIGURATION_DEMO_DESIGNS[0]
-        : name === "2"
-          ? CONFIGURATION_DEMO_DESIGNS[1]
-          : name === "3"
-            ? CONFIGURATION_DEMO_DESIGNS[2]
-            : null
-    if (!design) return
-    key.preventDefault()
-    key.stopPropagation()
-    picker.setDesign(design)
-    refreshHeader()
   }
   const applyTheme = (next: EditorTheme): void => {
     theme = next

@@ -1,13 +1,10 @@
 import { expect, test } from "bun:test"
 import { BoxRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
-import {
-  CONFIGURATION_DEMO_DESIGNS,
-  ConfigurationPickerDemo,
-} from "../src/tui/configuration-demo.js"
+import { ConfigurationPickerDemo } from "../src/tui/configuration-demo.js"
 import { themeFor } from "../src/tui/theme.js"
 
-test("demo treatments fill the width and reflow the Document when options open upward", async () => {
+test("outlined controls fill the width and reflow the Document when options open upward", async () => {
   const setup = await createTestRenderer({
     width: 80,
     height: 24,
@@ -40,30 +37,25 @@ test("demo treatments fill the width and reflow the Document when options open u
 
   try {
     await setup.renderOnce()
-    for (const design of CONFIGURATION_DEMO_DESIGNS) {
-      picker.setDesign(design)
-      document.focus()
-      await setup.renderOnce()
-      const collapsedDocumentHeight = document.height
-      expect(picker.width).toBe(80)
-      expect(picker.modelButton.height).toBe(3)
-      expect(picker.effortButton.height).toBe(3)
-      expect(picker.modelButton.width + picker.effortButton.width).toBe(
-        design === "stacked" ? 160 : 80,
-      )
+    document.focus()
+    await setup.renderOnce()
+    const collapsedDocumentHeight = document.height
+    expect(picker.width).toBe(80)
+    expect(picker.modelButton.height).toBe(3)
+    expect(picker.effortButton.height).toBe(3)
+    expect(picker.modelButton.width + picker.effortButton.width).toBe(80)
 
-      await setup.mockMouse.click(picker.modelButton.screenX + 2, picker.modelButton.screenY + 1)
-      await setup.renderOnce()
-      expect(picker.activeField).toBe("model")
-      expect(picker.menuVisible).toBe(true)
-      expect(picker.optionCount).toBe(3)
-      expect(picker.menuHeight).toBe(5)
-      expect(document.height).toBe(collapsedDocumentHeight - 5)
+    await setup.mockMouse.click(picker.modelButton.screenX + 2, picker.modelButton.screenY + 1)
+    await setup.renderOnce()
+    expect(picker.activeField).toBe("model")
+    expect(picker.menuVisible).toBe(true)
+    expect(picker.optionCount).toBe(3)
+    expect(picker.menuHeight).toBe(5)
+    expect(document.height).toBe(collapsedDocumentHeight - 5)
 
-      picker.closeAndFocusDocument()
-      await setup.renderOnce()
-      expect(document.height).toBe(collapsedDocumentHeight)
-    }
+    picker.closeAndFocusDocument()
+    await setup.renderOnce()
+    expect(document.height).toBe(collapsedDocumentHeight)
   } finally {
     setup.renderer.destroy()
   }
