@@ -150,7 +150,7 @@ export class ConfigurationPanel extends BoxRenderable {
     const addField = (field: ConfigurationField, value: string): void => {
       const selected = this.focused && this.selected === field
       chunks.push(fg(selected ? this.theme.focus : this.theme.dim)(selected ? "▎" : " "))
-      chunks.push(fg(this.theme.dim)(` ${field}  `))
+      chunks.push(fg(this.theme.secondary)(` ${field}  `))
       chunks.push(selected ? bold(fg(this.theme.primary)(value)) : fg(this.theme.primary)(value))
     }
 
@@ -208,6 +208,7 @@ export async function runSurface(service: SurfaceService): Promise<void> {
     let exitArmed = false
     let transientMessage: string | null = null
     let saveErrorMessage: string | null = null
+    let terminalCursorColorRestored = false
 
     const noticeBox = new BoxRenderable(renderer, {
       id: "notice",
@@ -281,7 +282,6 @@ export async function runSurface(service: SurfaceService): Promise<void> {
       focusedBackgroundColor: theme.background,
       selectionBg: theme.selectionBackground,
       selectionFg: theme.selectionForeground,
-      cursorColor: theme.focus,
       tabIndicator: "→",
       tabIndicatorColor: theme.dim,
       onContentChange: () => {
@@ -478,7 +478,6 @@ export async function runSurface(service: SurfaceService): Promise<void> {
       editor.focusedBackgroundColor = next.background
       editor.selectionBg = next.selectionBackground
       editor.selectionFg = next.selectionForeground
-      editor.cursorColor = next.focus
       editor.tabIndicatorColor = next.dim
       standby.fg = next.dim
       standby.bg = next.background
@@ -562,7 +561,13 @@ export async function runSurface(service: SurfaceService): Promise<void> {
         toggleConfiguration()
       }
     }
-    const frameHandler = (): void => captureView()
+    const frameHandler = (): void => {
+      captureView()
+      if (editor.focused && !terminalCursorColorRestored) {
+        themeController?.restoreTerminalCursorColor()
+        terminalCursorColorRestored = true
+      }
+    }
     const resizeHandler = (): void => panel.resizeForWidth(renderer?.width ?? 80)
     renderer.keyInput.on("keypress", keyHandler)
     renderer.on("frame", frameHandler)

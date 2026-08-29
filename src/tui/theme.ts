@@ -37,35 +37,36 @@ const DISABLE_THEME_NOTIFICATIONS = "\x1b[?2031l"
 const DARK_NOTIFICATION = "\x1b[?997;1n"
 const LIGHT_NOTIFICATION = "\x1b[?997;2n"
 const OSC11_TIMEOUT_MS = 200
+const RESTORE_TERMINAL_CURSOR_COLOR = "\x1b]12;default\x07\x1b]112\x07"
 
 const THEMES: Readonly<Record<ThemeMode, EditorTheme>> = {
   dark: {
     mode: "dark",
     background: RGBA.defaultBackground(),
-    primary: RGBA.fromIndex(255),
-    accent: RGBA.fromIndex(252),
-    secondary: RGBA.fromIndex(250),
-    dim: RGBA.fromIndex(245),
-    divider: RGBA.fromIndex(240),
-    surface: RGBA.fromIndex(236),
+    primary: RGBA.fromHex("#eeeeee"),
+    accent: RGBA.fromHex("#d0d0d0"),
+    secondary: RGBA.fromHex("#bcbcbc"),
+    dim: RGBA.fromHex("#8a8a8a"),
+    divider: RGBA.fromHex("#585858"),
+    surface: RGBA.fromHex("#303030"),
     focus: RGBA.fromIndex(4),
     error: RGBA.fromIndex(1),
-    selectionBackground: RGBA.fromIndex(255),
-    selectionForeground: RGBA.fromIndex(235),
+    selectionBackground: RGBA.fromHex("#eeeeee"),
+    selectionForeground: RGBA.fromHex("#262626"),
   },
   light: {
     mode: "light",
     background: RGBA.defaultBackground(),
-    primary: RGBA.fromIndex(235),
-    accent: RGBA.fromIndex(238),
-    secondary: RGBA.fromIndex(241),
-    dim: RGBA.fromIndex(247),
-    divider: RGBA.fromIndex(250),
-    surface: RGBA.fromIndex(254),
+    primary: RGBA.fromHex("#262626"),
+    accent: RGBA.fromHex("#444444"),
+    secondary: RGBA.fromHex("#626262"),
+    dim: RGBA.fromHex("#9e9e9e"),
+    divider: RGBA.fromHex("#bcbcbc"),
+    surface: RGBA.fromHex("#e4e4e4"),
     focus: RGBA.fromIndex(4),
     error: RGBA.fromIndex(1),
-    selectionBackground: RGBA.fromIndex(235),
-    selectionForeground: RGBA.fromIndex(255),
+    selectionBackground: RGBA.fromHex("#262626"),
+    selectionForeground: RGBA.fromHex("#eeeeee"),
   },
 }
 
@@ -109,6 +110,12 @@ export class EditorThemeController {
       onChange(themeFor(resolution.mode))
     })
     this.monitor.start()
+  }
+
+  restoreTerminalCursorColor(): void {
+    try {
+      this.port.write(RESTORE_TERMINAL_CURSOR_COLOR)
+    } catch {}
   }
 
   dispose(): void {

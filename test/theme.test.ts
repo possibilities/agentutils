@@ -39,9 +39,47 @@ describe("fxnk theme contract", () => {
     expect(colorFgBgIsLight("15;0")).toBe(false)
     expect(colorFgBgIsLight("0;15")).toBe(true)
 
-    expect(themeFor("dark").primary.toInts().slice(0, 3)).toEqual([238, 238, 238])
-    expect(themeFor("light").primary.toInts().slice(0, 3)).toEqual([38, 38, 38])
-    expect(themeFor("dark").focus.toString()).not.toBe(themeFor("dark").primary.toString())
+    const grayscale = [
+      ["dark", "primary", [238, 238, 238]],
+      ["dark", "accent", [208, 208, 208]],
+      ["dark", "secondary", [188, 188, 188]],
+      ["dark", "dim", [138, 138, 138]],
+      ["dark", "divider", [88, 88, 88]],
+      ["dark", "surface", [48, 48, 48]],
+      ["dark", "selectionBackground", [238, 238, 238]],
+      ["dark", "selectionForeground", [38, 38, 38]],
+      ["light", "primary", [38, 38, 38]],
+      ["light", "accent", [68, 68, 68]],
+      ["light", "secondary", [98, 98, 98]],
+      ["light", "dim", [158, 158, 158]],
+      ["light", "divider", [188, 188, 188]],
+      ["light", "surface", [228, 228, 228]],
+      ["light", "selectionBackground", [38, 38, 38]],
+      ["light", "selectionForeground", [238, 238, 238]],
+    ] as const
+    for (const [mode, role, rgb] of grayscale) {
+      const color = themeFor(mode)[role]
+      expect(color.toInts().slice(0, 3)).toEqual([...rgb])
+      expect(color.intent).toBe("rgb")
+    }
+    for (const mode of ["dark", "light"] as const) {
+      expect(themeFor(mode).background.intent).toBe("default")
+      expect(themeFor(mode).focus).toMatchObject({ intent: "indexed", slot: 4 })
+      expect(themeFor(mode).error).toMatchObject({ intent: "indexed", slot: 1 })
+    }
+  })
+
+  test("restores the terminal-owned hardware cursor color", () => {
+    const port = new FakeThemePort()
+    const controller = new EditorThemeController(port, {
+      mode: "dark",
+      source: "default",
+      explicit: false,
+    })
+
+    controller.restoreTerminalCursorColor()
+
+    expect(port.writes).toEqual(["\x1b]12;default\x07\x1b]112\x07"])
   })
 
   test("retints the complete fixed theme after a fenced CSI 997 refresh", () => {

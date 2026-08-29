@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test"
+import { BoxRenderable, type RGBA } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
+import { DocumentTextarea } from "../src/tui/editor.js"
 import { ConfigurationPanel, configurationPanelHeight, configurationPanelText } from "../src/tui/surface.js"
 import { themeFor } from "../src/tui/theme.js"
 
@@ -77,3 +79,70 @@ test("Tab selects a field and arrows cycle only that field", async () => {
     setup.renderer.destroy()
   }
 })
+
+test("Configuration owns the only chromatic focus mark and suppresses the Document cursor", async () => {
+  const setup = await createTestRenderer({
+    width: 80,
+    height: 8,
+    kittyKeyboard: true,
+    exitOnCtrlC: false,
+    exitSignals: [],
+  })
+  const theme = themeFor("dark")
+  const root = new BoxRenderable(setup.renderer, {
+    width: "100%",
+    height: "100%",
+    flexDirection: "column",
+    backgroundColor: theme.background,
+  })
+  const editor = new DocumentTextarea(setup.renderer, {
+    id: "document",
+    width: "100%",
+    height: "100%",
+    flexGrow: 1,
+    initialValue: "Document cursor",
+    textColor: theme.primary,
+    focusedTextColor: theme.primary,
+    backgroundColor: theme.background,
+    focusedBackgroundColor: theme.background,
+  })
+  const panel = new ConfigurationPanel(setup.renderer, {
+    theme,
+    onCycle: () => {},
+    onToggle: () => {},
+    onQuit: () => {},
+  })
+  panel.setConfiguration("gpt-5.6-sol", "high")
+  root.add(editor)
+  root.add(panel)
+  setup.renderer.root.add(root)
+
+  try {
+    editor.focus()
+    await setup.renderOnce()
+    expect(setup.renderer.getCursorState().visible).toBe(true)
+
+    panel.focus()
+    await setup.renderOnce()
+    expect(setup.renderer.currentFocusedRenderable).toBe(panel)
+    expect(editor.showCursor).toBe(false)
+    expect(setup.renderer.getCursorState().visible).toBe(false)
+
+    const spans = setup.captureSpans().lines.flatMap((line) => line.spans)
+    const visibleSpans = spans.filter((span) => span.text.trim().length > 0)
+    const chromatic = visibleSpans.filter((span) => !isGrayscale(span.fg))
+    expect(chromatic.map((span) => span.text.trim())).toEqual(["▎"])
+    expect(chromatic[0]?.fg).toMatchObject({ intent: "indexed", slot: 4 })
+    expect(spans.every((span) => isGrayscale(span.bg))).toBe(true)
+
+    const label = visibleSpans.find((span) => span.text.includes(" model  "))
+    expect(label?.fg.toInts()).toEqual(theme.secondary.toInts())
+  } finally {
+    setup.renderer.destroy()
+  }
+})
+
+function isGrayscale(color: RGBA): boolean {
+  const [red, green, blue] = color.toInts()
+  return red === green && green === blue
+}

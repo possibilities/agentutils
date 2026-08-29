@@ -83,6 +83,16 @@ export class DocumentTextarea extends TextareaRenderable {
     super(ctx, options)
   }
 
+  override focus(): void {
+    this.showCursor = true
+    super.focus()
+  }
+
+  override blur(): void {
+    super.blur()
+    this.showCursor = false
+  }
+
   override handleKeyPress(key: KeyEvent): boolean {
     const name = key.name.toLowerCase()
     const kill = this.killCommand(key, name)
