@@ -257,24 +257,6 @@ export class SurfaceService {
     return this.publicDocument(stored)
   }
 
-  cycleConfiguration(field: "model" | "effort", delta: -1 | 1): void {
-    if (this.runtime === null || this.catalog.models.length === 0) return
-    const current = this.runtime.stored.configuration
-    if (field === "model") {
-      const index = Math.max(0, this.catalog.models.findIndex((model) => model.id === current.model))
-      const model = this.catalog.models[wrapIndex(index + delta, this.catalog.models.length)]!
-      this.setConfiguration({
-        model: model.id,
-        effort: model.defaultEffort ?? model.efforts[0]!,
-      })
-      return
-    }
-    const model = this.catalog.models.find((candidate) => candidate.id === current.model) ?? this.catalog.models[0]!
-    if (model.efforts.length === 0) return
-    const index = Math.max(0, model.efforts.indexOf(current.effort ?? ""))
-    this.setConfiguration({ model: model.id, effort: model.efforts[wrapIndex(index + delta, model.efforts.length)]! })
-  }
-
   getSurfaceState(flush = true): SurfaceSnapshot {
     if (flush) this.flush()
     return {
@@ -507,10 +489,6 @@ function publicTransaction(transaction: Transaction | null): PublicTransaction |
       removed: edit.end - edit.start,
     })),
   }
-}
-
-function wrapIndex(index: number, length: number): number {
-  return ((index % length) + length) % length
 }
 
 function clampInteger(value: number, minimum: number, maximum: number): number {

@@ -181,10 +181,13 @@ or submission.
 
 The TUI normally contains only Document text. Agents control Configuration
 visibility through `set_surface_mode`; there is no TUI shortcut for showing or
-focusing the panel. While Configuration has focus, `tab` changes field and
-arrow keys cycle valid values. The panel contains no send control. The first
-`ctrl+c` shows a transient exit notice; a second press within two seconds
-flushes and exits.
+focusing it. When visible, two outlined three-row controls share the bottom of
+the Surface. Clicking model or effort focuses it and opens its option list
+upward. The list shortens the Document instead of covering it, and every option
+is clickable. Arrow keys move through options, Enter chooses one, Tab changes
+field, and Escape returns to the Document. Configuration contains no send
+control. The first `ctrl+c` shows a transient exit notice; a second press within
+two seconds flushes and exits.
 
 Human edits save automatically. A first launch with no focused Document shows
 standby; MCP creation or focus supplies the work. The last focused Document,

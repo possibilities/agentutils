@@ -1,12 +1,8 @@
 import {
   BoxRenderable,
-  StyledText,
   TextRenderable,
-  bold,
   createCliRenderer,
-  fg,
   type KeyEvent,
-  type RenderContext,
 } from "@opentui/core"
 import type { Transaction } from "../document/model.js"
 import type { SurfaceMode, ViewState } from "../storage/database.js"
@@ -17,145 +13,8 @@ import {
   TransientNotice,
   applyTransactionToEditorState,
 } from "./editor.js"
+import { ConfigurationPanel } from "./configuration.js"
 import { editorTheme, type EditorTheme } from "./theme.js"
-
-type ConfigurationField = "model" | "effort"
-
-type ConfigurationPanelOptions = {
-  theme: EditorTheme
-  onCycle: (field: ConfigurationField, delta: -1 | 1) => void
-  onQuit: () => void
-}
-
-export function configurationPanelHeight(width: number): number {
-  return width < 55 ? 2 : 1
-}
-
-export function configurationPanelText(input: {
-  width: number
-  model: string | null
-  effort: string | null
-  selected: ConfigurationField
-  focused: boolean
-}): string {
-  const values = fittedConfigurationValues(input.width, input.model, input.effort)
-  const field = (name: ConfigurationField, value: string): string =>
-    `${input.focused && input.selected === name ? "▎" : " "} ${name}  ${value}`
-  const model = field("model", values.model)
-  const effort = field("effort", values.effort)
-  return configurationPanelHeight(input.width) === 1 ? `${model}  ·  ${effort}` : `${model}\n${effort}`
-}
-
-export class ConfigurationPanel extends BoxRenderable {
-  private readonly text: TextRenderable
-  private selected: ConfigurationField = "model"
-  private theme: EditorTheme
-  private model: string | null = null
-  private effort: string | null = null
-  private layoutWidth: number
-
-  constructor(ctx: RenderContext, private readonly options: ConfigurationPanelOptions) {
-    const height = configurationPanelHeight(ctx.width)
-    super(ctx, {
-      id: "configuration",
-      width: "100%",
-      height,
-      flexShrink: 0,
-      focusable: true,
-      backgroundColor: options.theme.surface,
-      shouldFill: true,
-    })
-    this.theme = options.theme
-    this.layoutWidth = ctx.width
-    this.text = new TextRenderable(ctx, {
-      id: "configuration-values",
-      width: "100%",
-      height,
-      content: "",
-      fg: options.theme.primary,
-      bg: options.theme.surface,
-      selectable: false,
-      truncate: true,
-    })
-    this.add(this.text)
-    this.refresh()
-  }
-
-  get selectedField(): ConfigurationField {
-    return this.selected
-  }
-
-  setConfiguration(model: string | null, effort: string | null): void {
-    this.model = model
-    this.effort = effort
-    this.refresh()
-  }
-
-  setTheme(theme: EditorTheme): void {
-    this.theme = theme
-    this.backgroundColor = theme.surface
-    this.text.bg = theme.surface
-    this.refresh()
-  }
-
-  resizeForWidth(width: number): void {
-    this.layoutWidth = Math.max(1, Math.trunc(width))
-    const height = configurationPanelHeight(this.layoutWidth)
-    this.height = height
-    this.text.height = height
-    this.refresh()
-  }
-
-  override focus(): void {
-    super.focus()
-    this.refresh()
-  }
-
-  override blur(): void {
-    super.blur()
-    this.refresh()
-  }
-
-  override handleKeyPress(key: KeyEvent): boolean {
-    const name = key.name.toLowerCase()
-    if (key.ctrl && name === "c") {
-      this.options.onQuit()
-      return true
-    }
-    if (name === "tab") {
-      this.selected = this.selected === "model" ? "effort" : "model"
-      this.refresh()
-      return true
-    }
-    if (name === "left" || name === "up") {
-      this.options.onCycle(this.selected, -1)
-      return true
-    }
-    if (name === "right" || name === "down") {
-      this.options.onCycle(this.selected, 1)
-      return true
-    }
-    return false
-  }
-
-  private refresh(): void {
-    if (this.text.isDestroyed) return
-    const values = fittedConfigurationValues(this.layoutWidth, this.model, this.effort)
-    const chunks = []
-    const addField = (field: ConfigurationField, value: string): void => {
-      const selected = this.focused && this.selected === field
-      chunks.push(fg(selected ? this.theme.focus : this.theme.dim)(selected ? "▎" : " "))
-      chunks.push(fg(this.theme.secondary)(` ${field}  `))
-      chunks.push(selected ? bold(fg(this.theme.primary)(value)) : fg(this.theme.primary)(value))
-    }
-
-    addField("model", values.model)
-    if (configurationPanelHeight(this.layoutWidth) === 1) chunks.push(fg(this.theme.dim)("  ·  "))
-    else chunks.push(fg(this.theme.dim)("\n"))
-    addField("effort", values.effort)
-    this.text.content = new StyledText(chunks)
-  }
-}
 
 export async function runSurface(service: SurfaceService): Promise<void> {
   let renderer: Awaited<ReturnType<typeof createCliRenderer>> | null = null
@@ -365,19 +224,25 @@ export async function runSurface(service: SurfaceService): Promise<void> {
       }
     }
 
-    let configuration: ConfigurationPanel | null = null
-    configuration = new ConfigurationPanel(renderer, {
+    let panel: ConfigurationPanel
+    panel = new ConfigurationPanel(renderer, {
       theme,
-      onCycle: (field, delta) => {
+      models: service.catalog.models,
+      onSelect: (configuration) => {
         try {
-          service.cycleConfiguration(field, delta)
+          service.setConfiguration(configuration)
+          return true
         } catch {
           transientNotice?.show("save failed")
+          return false
         }
+      },
+      onRequestDocumentFocus: () => {
+        if (editor.visible) editor.focus()
+        else panel.closeMenu()
       },
       onQuit: () => exitConfirmation?.request(),
     })
-    const panel = configuration
 
     const standby = new TextRenderable(renderer, {
       id: "standby",
@@ -432,13 +297,20 @@ export async function runSurface(service: SurfaceService): Promise<void> {
         state.focused_document?.effort ?? null,
       )
 
-      const focused = renderer?.currentFocusedRenderable
-      if (preserveFocus && focused?.visible) return
-      if (mode === "configuration" && panel.visible) panel.focus()
+      const focused = renderer?.currentFocusedRenderable ?? null
+      const panelFocused = panel.ownsFocus(focused)
+      if (!panel.visible && panelFocused) panel.releaseFocus()
+      if (
+        preserveFocus &&
+        ((focused === editor && editor.visible) || (panelFocused && panel.visible))
+      ) {
+        return
+      }
+      if (mode === "configuration" && panel.visible) panel.focusModel()
       else if (editor.visible) editor.focus()
       else {
         editor.blur()
-        panel.blur()
+        panel.releaseFocus()
       }
     }
 
@@ -520,7 +392,7 @@ export async function runSurface(service: SurfaceService): Promise<void> {
     root.add(noticeBox)
     renderer.root.add(root)
     syncFocusedDocument()
-    panel.resizeForWidth(renderer.width)
+    panel.resizeForSize(renderer.width, renderer.height)
     applyMode(service.getSurfaceState(false).mode, false)
 
     const keyHandler = (key: KeyEvent): void => {
@@ -538,10 +410,15 @@ export async function runSurface(service: SurfaceService): Promise<void> {
         terminalCursorColorRestored = true
       }
     }
-    const resizeHandler = (): void => panel.resizeForWidth(renderer?.width ?? 80)
+    const resizeHandler = (): void =>
+      panel.resizeForSize(renderer?.width ?? 80, renderer?.height ?? 24)
+    const focusHandler = (focused: unknown): void => {
+      if (focused === editor) panel.closeMenu()
+    }
     renderer.keyInput.on("keypress", keyHandler)
     renderer.on("frame", frameHandler)
     renderer.on("resize", resizeHandler)
+    renderer.on("focused_renderable", focusHandler)
     themeController.start(applyTheme)
     renderer.start()
     await finished
@@ -549,6 +426,7 @@ export async function runSurface(service: SurfaceService): Promise<void> {
     renderer.keyInput.off("keypress", keyHandler)
     renderer.off("frame", frameHandler)
     renderer.off("resize", resizeHandler)
+    renderer.off("focused_renderable", focusHandler)
     themeController.dispose()
     themeController = null
     unsubscribe()
@@ -568,32 +446,4 @@ function activeLine(text: string, cursor: number): { start: number; end: number 
   const start = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1
   const newline = text.indexOf("\n", cursor)
   return { start, end: newline === -1 ? text.length : newline + 1 }
-}
-
-function fittedConfigurationValues(
-  width: number,
-  model: string | null,
-  effort: string | null,
-): { model: string; effort: string } {
-  const modelValue = model ?? "unavailable"
-  const effortValue = effort ?? "unavailable"
-  if (configurationPanelHeight(width) === 2) {
-    return {
-      model: fitValue(modelValue, Math.max(1, width - 9)),
-      effort: fitValue(effortValue, Math.max(1, width - 10)),
-    }
-  }
-
-  const available = Math.max(2, width - 24)
-  const effortWidth = Math.min(Math.max(4, effortValue.length), Math.min(12, available - 1))
-  return {
-    model: fitValue(modelValue, Math.max(1, available - effortWidth)),
-    effort: fitValue(effortValue, Math.max(1, effortWidth)),
-  }
-}
-
-function fitValue(value: string, width: number): string {
-  if (value.length <= width) return value
-  if (width <= 1) return "…"
-  return `${value.slice(0, width - 1)}…`
 }

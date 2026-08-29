@@ -1,10 +1,9 @@
 # Configuration picker demo
 
-This development-only OpenTUI demo exercises the selected outlined-split
-treatment for the future Configuration picker without changing the production
-Surface. Two three-row bordered controls share the full width. The sample
-Document is deliberately long enough to expose wrapping and viewport pressure
-at narrow widths and shallow heights.
+This development-only OpenTUI demo exercises the production outlined-split
+Configuration picker against a fixed sample Catalog. Two three-row bordered
+controls share the full width. The sample Document is deliberately long enough
+to expose wrapping and viewport pressure at narrow widths and shallow heights.
 
 The full-width option list opens immediately above the controls and
 participates in flex layout, so it shortens the Document instead of covering

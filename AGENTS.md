@@ -5,14 +5,16 @@ the Surface or its MCP protocol.
 
 ## Product contract
 
-- The live TUI is the focused Document plus an optional compact Configuration
-  panel, either one alone, or standby. It has no persistent header, footer,
+- The live TUI is the focused Document plus an optional outlined Configuration
+  picker, either one alone, or standby. It has no persistent header, footer,
   filename, line-number gutter, status row, help text, or surrounding controls.
 - The TUI has no command palette, prompts, preview, manual save, or submission
   affordance. Human interaction is keyboard/mouse Document editing,
-  model/effort selection when Configuration is focused, and a two-press
-  `ctrl+c` exit; only transient exit and save-failure notices may cover the
-  Document. There is no TUI binding for showing or focusing Configuration.
+  model/effort selection through the click- or keyboard-focused Configuration
+  picker, and a two-press `ctrl+c` exit; only transient exit and save-failure
+  notices may cover the Document. There is no TUI binding for showing or
+  focusing Configuration, and an open option list reflows rather than covers
+  the Document.
 - Visual decisions come only from `~/code/fxnk/style/STYLE.md` and
   `~/code/fxnk/style/tokens.json`; no fleet-wide TUI convention applies.
 - Human and agent mutations share one revisioned Document. Never add a blind

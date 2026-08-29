@@ -6,351 +6,28 @@ import {
   createCliRenderer,
   fg,
   type KeyEvent,
-  type RenderContext,
 } from "@opentui/core"
+import type { CatalogModel } from "../catalog.js"
+import { ConfigurationPanel } from "./configuration.js"
 import { editorTheme, type EditorTheme } from "./theme.js"
 
-type ConfigurationField = "model" | "effort"
-
-const MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const
-const EFFORTS: Readonly<Record<(typeof MODELS)[number], readonly string[]>> = {
-  "gpt-5.6-sol": ["low", "medium", "high", "xhigh", "max", "ultra"],
-  "gpt-5.6-terra": ["low", "medium", "high", "xhigh", "max", "ultra"],
-  "gpt-5.6-luna": ["low", "medium", "high", "xhigh", "max"],
-}
-
-type DemoConfiguration = {
-  model: (typeof MODELS)[number]
-  effort: string
-}
-
-type ConfigurationPickerDemoOptions = {
-  theme: EditorTheme
-  onRequestDocumentFocus: () => void
-  onConfigurationChange?: (configuration: DemoConfiguration) => void
-}
-
-class DemoSelectorButton extends BoxRenderable {
-  private readonly text: TextRenderable
-  private theme: EditorTheme
-
-  constructor(
-    ctx: RenderContext,
-    readonly field: ConfigurationField,
-    private readonly picker: ConfigurationPickerDemo,
-    theme: EditorTheme,
-  ) {
-    super(ctx, {
-      id: `configuration-demo-${field}`,
-      width: "50%",
-      height: 3,
-      flexShrink: 0,
-      focusable: true,
-      border: true,
-      borderColor: theme.divider,
-      focusedBorderColor: theme.focus,
-      backgroundColor: theme.background,
-      justifyContent: "center",
-      shouldFill: true,
-    })
-    this.theme = theme
-    this.text = new TextRenderable(ctx, {
-      width: "100%",
-      height: 1,
-      content: "",
-      fg: theme.primary,
-      bg: theme.background,
-      selectable: false,
-      truncate: true,
-    })
-    this.add(this.text)
-    this.onMouseDown = (event) => {
-      if (event.button !== 0) return
-      this.focus()
-      event.preventDefault()
-      event.stopPropagation()
-    }
-    this.refresh()
-  }
-
-  override focus(): void {
-    super.focus()
-    this.picker.open(this.field)
-    this.refresh()
-  }
-
-  override blur(): void {
-    super.blur()
-    this.refresh()
-  }
-
-  override handleKeyPress(key: KeyEvent): boolean {
-    const name = key.name.toLowerCase()
-    if (name === "up" || name === "left") {
-      this.picker.moveHighlight(-1)
-      return true
-    }
-    if (name === "down" || name === "right") {
-      this.picker.moveHighlight(1)
-      return true
-    }
-    if (name === "return" || name === "enter") {
-      this.picker.chooseHighlighted()
-      return true
-    }
-    if (name === "escape") {
-      this.picker.closeAndFocusDocument()
-      return true
-    }
-    if (name === "tab") {
-      this.picker.focusOther(this.field)
-      return true
-    }
-    return false
-  }
-
-  setTheme(theme: EditorTheme): void {
-    this.theme = theme
-    this.borderColor = theme.divider
-    this.focusedBorderColor = theme.focus
-    this.backgroundColor = theme.background
-    this.text.bg = theme.background
-    this.refresh()
-  }
-
-  refresh(): void {
-    if (this.text.isDestroyed) return
-    const rawValue = this.picker.configuration[this.field]
-    const marker = this.focused ? "▎" : " "
-    const value = fitValue(rawValue, Math.max(1, this.width - this.field.length - 7))
-    this.text.content = new StyledText([
-      fg(this.focused ? this.theme.focus : this.theme.dim)(marker),
-      fg(this.theme.secondary)(` ${this.field} `),
-      this.focused ? bold(fg(this.theme.primary)(value)) : fg(this.theme.primary)(value),
-      fg(this.theme.dim)(" ▴"),
-    ])
-  }
-
-  protected override onResize(width: number, height: number): void {
-    super.onResize(width, height)
-    this.refresh()
-  }
-}
-
-export class ConfigurationPickerDemo extends BoxRenderable {
-  readonly modelButton: DemoSelectorButton
-  readonly effortButton: DemoSelectorButton
-  private readonly menu: BoxRenderable
-  private readonly controls: BoxRenderable
-  private readonly menuRows: Array<{ box: BoxRenderable; text: TextRenderable }> = []
-  private readonly options: ConfigurationPickerDemoOptions
-  private theme: EditorTheme
-  private active: ConfigurationField | null = null
-  private highlighted = 0
-  private value: DemoConfiguration = { model: MODELS[0], effort: EFFORTS[MODELS[0]][2]! }
-
-  constructor(ctx: RenderContext, options: ConfigurationPickerDemoOptions) {
-    super(ctx, {
-      id: "configuration-picker-demo",
-      width: "100%",
-      height: 3,
-      flexDirection: "column",
-      flexShrink: 0,
-      backgroundColor: options.theme.background,
-    })
-    this.options = options
-    this.theme = options.theme
-
-    this.menu = new BoxRenderable(ctx, {
-      id: "configuration-demo-menu",
-      width: "100%",
-      height: 0,
-      flexDirection: "column",
-      flexShrink: 0,
-      border: true,
-      borderColor: options.theme.divider,
-      backgroundColor: options.theme.background,
-      shouldFill: true,
-      visible: false,
-    })
-    this.controls = new BoxRenderable(ctx, {
-      id: "configuration-demo-controls",
-      width: "100%",
-      height: 3,
-      flexDirection: "row",
-      flexShrink: 0,
-      backgroundColor: options.theme.background,
-    })
-    this.modelButton = new DemoSelectorButton(ctx, "model", this, options.theme)
-    this.effortButton = new DemoSelectorButton(ctx, "effort", this, options.theme)
-
-    const maximumRows = Math.max(MODELS.length, ...Object.values(EFFORTS).map((efforts) => efforts.length))
-    for (let index = 0; index < maximumRows; index += 1) {
-      const row = new BoxRenderable(ctx, {
-        id: `configuration-demo-option-${index}`,
-        width: "100%",
-        height: 1,
-        flexShrink: 0,
-        backgroundColor: options.theme.background,
-        visible: false,
-      })
-      const text = new TextRenderable(ctx, {
-        width: "100%",
-        height: 1,
-        content: "",
-        fg: options.theme.secondary,
-        bg: options.theme.background,
-        selectable: false,
-        truncate: true,
-      })
-      row.add(text)
-      row.onMouseDown = (event) => {
-        if (event.button !== 0 || !row.visible) return
-        this.choose(index)
-        event.preventDefault()
-        event.stopPropagation()
-      }
-      this.menu.add(row)
-      this.menuRows.push({ box: row, text })
-    }
-
-    this.controls.add(this.modelButton)
-    this.controls.add(this.effortButton)
-    this.add(this.menu)
-    this.add(this.controls)
-  }
-
-  get activeField(): ConfigurationField | null {
-    return this.active
-  }
-
-  get configuration(): DemoConfiguration {
-    return { ...this.value }
-  }
-
-  get menuVisible(): boolean {
-    return this.menu.visible
-  }
-
-  get optionCount(): number {
-    return this.fieldOptions().length
-  }
-
-  get menuHeight(): number {
-    return this.menu.visible ? this.fieldOptions().length + 2 : 0
-  }
-
-  setTheme(theme: EditorTheme): void {
-    this.theme = theme
-    this.backgroundColor = theme.background
-    this.controls.backgroundColor = theme.background
-    this.menu.backgroundColor = theme.background
-    this.menu.borderColor = theme.divider
-    this.modelButton.setTheme(theme)
-    this.effortButton.setTheme(theme)
-    this.refreshMenu()
-  }
-
-  open(field: ConfigurationField): void {
-    this.active = field
-    const selected = this.fieldOptions().indexOf(this.value[field])
-    this.highlighted = selected < 0 ? 0 : selected
-    this.menu.visible = true
-    this.refreshMenu()
-    this.updateHeight()
-    this.modelButton.refresh()
-    this.effortButton.refresh()
-  }
-
-  close(): void {
-    if (this.active === null && !this.menu.visible) return
-    this.active = null
-    this.menu.visible = false
-    this.refreshMenu()
-    this.updateHeight()
-    this.modelButton.refresh()
-    this.effortButton.refresh()
-  }
-
-  closeAndFocusDocument(): void {
-    this.close()
-    this.options.onRequestDocumentFocus()
-  }
-
-  focusOther(field: ConfigurationField): void {
-    if (field === "model") this.effortButton.focus()
-    else this.modelButton.focus()
-  }
-
-  moveHighlight(delta: -1 | 1): void {
-    const options = this.fieldOptions()
-    if (options.length === 0) return
-    this.highlighted = wrapIndex(this.highlighted + delta, options.length)
-    this.refreshMenu()
-  }
-
-  chooseHighlighted(): void {
-    this.choose(this.highlighted)
-  }
-
-  choose(index: number): void {
-    const field = this.active
-    const option = this.fieldOptions()[index]
-    if (!field || option === undefined) return
-    if (field === "model") {
-      const model = option as DemoConfiguration["model"]
-      this.value.model = model
-      const supported = EFFORTS[model]
-      if (!supported.includes(this.value.effort)) this.value.effort = supported[0]!
-    } else this.value.effort = option
-    this.options.onConfigurationChange?.(this.configuration)
-    this.closeAndFocusDocument()
-  }
-
-  optionRow(index: number): BoxRenderable | null {
-    return this.menuRows[index]?.box ?? null
-  }
-
-  private fieldOptions(): readonly string[] {
-    if (this.active === "model") return MODELS
-    if (this.active === "effort") return EFFORTS[this.value.model]
-    return []
-  }
-
-  private refreshMenu(): void {
-    const options = this.fieldOptions()
-    this.menu.height = this.menuHeight
-    for (const [index, row] of this.menuRows.entries()) {
-      const value = options[index]
-      row.box.visible = this.menu.visible && value !== undefined
-      row.box.backgroundColor = this.theme.background
-      row.text.bg = this.theme.background
-      if (value === undefined) {
-        row.text.content = ""
-        continue
-      }
-      const highlighted = index === this.highlighted
-      row.text.content = new StyledText([
-        fg(highlighted ? this.theme.focus : this.theme.dim)(highlighted ? "> " : "  "),
-        highlighted ? bold(fg(this.theme.primary)(value)) : fg(this.theme.secondary)(value),
-      ])
-    }
-  }
-
-  private updateHeight(): void {
-    this.height = 3 + this.menuHeight
-  }
-}
-
-function wrapIndex(index: number, length: number): number {
-  return ((index % length) + length) % length
-}
-
-function fitValue(value: string, width: number): string {
-  if (value.length <= width) return value
-  if (width <= 1) return "…"
-  return `${value.slice(0, width - 1)}…`
-}
+const MODELS: CatalogModel[] = [
+  {
+    id: "gpt-5.6-sol",
+    defaultEffort: "high",
+    efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+  },
+  {
+    id: "gpt-5.6-terra",
+    defaultEffort: "medium",
+    efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+  },
+  {
+    id: "gpt-5.6-luna",
+    defaultEffort: "medium",
+    efforts: ["low", "medium", "high", "xhigh", "max"],
+  },
+]
 
 async function runDemo(): Promise<void> {
   const renderer = await createCliRenderer({
@@ -408,13 +85,27 @@ async function runDemo(): Promise<void> {
     wrapMode: "word",
   })
   document.add(documentText)
-  const picker = new ConfigurationPickerDemo(renderer, {
+
+  let model = MODELS[0]!.id
+  let effort = MODELS[0]!.defaultEffort!
+  const panel = new ConfigurationPanel(renderer, {
     theme,
+    models: MODELS,
+    onSelect: (configuration) => {
+      model = configuration.model
+      effort = configuration.effort
+      panel.setConfiguration(model, effort)
+      return true
+    },
     onRequestDocumentFocus: () => document.focus(),
+    onQuit: resolveDone,
   })
+  panel.setConfiguration(model, effort)
+  panel.resizeForSize(renderer.width, renderer.height - 1)
+
   document.onMouseDown = (event) => {
     if (event.button !== 0) return
-    picker.close()
+    panel.closeMenu()
     document.focus()
     event.preventDefault()
     event.stopPropagation()
@@ -429,7 +120,7 @@ async function runDemo(): Promise<void> {
 
   root.add(header)
   root.add(document)
-  root.add(picker)
+  root.add(panel)
   renderer.root.add(root)
 
   const keyHandler = (key: KeyEvent): void => {
@@ -440,6 +131,10 @@ async function runDemo(): Promise<void> {
       resolveDone()
     }
   }
+  const resizeHandler = (): void => panel.resizeForSize(renderer.width, renderer.height - 1)
+  const focusHandler = (focused: unknown): void => {
+    if (focused === document) panel.closeMenu()
+  }
   const applyTheme = (next: EditorTheme): void => {
     theme = next
     renderer.setBackgroundColor(next.background)
@@ -449,17 +144,21 @@ async function runDemo(): Promise<void> {
     document.backgroundColor = next.background
     documentText.fg = next.primary
     documentText.bg = next.background
-    picker.setTheme(next)
+    panel.setTheme(next)
     refreshHeader()
   }
 
   renderer.keyInput.on("keypress", keyHandler)
+  renderer.on("resize", resizeHandler)
+  renderer.on("focused_renderable", focusHandler)
   themeController.start(applyTheme)
   renderer.start()
-  picker.modelButton.focus()
+  panel.focusModel()
   await done
 
   renderer.keyInput.off("keypress", keyHandler)
+  renderer.off("resize", resizeHandler)
+  renderer.off("focused_renderable", focusHandler)
   themeController.dispose()
   renderer.destroy()
 }
