@@ -21,6 +21,11 @@ type ConfigurationPanelOptions = {
   onRequestDocumentFocus: () => void
 }
 
+type OptionRow = {
+  box: BoxRenderable
+  text: TextRenderable
+}
+
 class ConfigurationButton extends BoxRenderable {
   private readonly text: TextRenderable
   private theme: EditorTheme
@@ -36,10 +41,8 @@ class ConfigurationButton extends BoxRenderable {
       width: "50%",
       height: 3,
       flexShrink: 0,
-      focusable: true,
       border: true,
       borderColor: theme.divider,
-      focusedBorderColor: theme.focus,
       backgroundColor: theme.background,
       justifyContent: "center",
       shouldFill: true,
@@ -58,22 +61,142 @@ class ConfigurationButton extends BoxRenderable {
     this.add(this.text)
     this.onMouseDown = (event) => {
       if (event.button !== 0) return
-      this.focus()
+      this.panel.open(this.field)
       event.preventDefault()
       event.stopPropagation()
     }
     this.refresh()
   }
 
+  setTheme(theme: EditorTheme): void {
+    this.theme = theme
+    this.borderColor = theme.divider
+    this.backgroundColor = theme.background
+    this.text.bg = theme.background
+    this.refresh()
+  }
+
+  refresh(): void {
+    if (this.text.isDestroyed) return
+    const rawValue = this.panel.configuration[this.field] ?? "unavailable"
+    const value = fitValue(rawValue, Math.max(1, this.width - this.field.length - 7))
+    this.text.content = new StyledText([
+      fg(this.theme.dim)(" "),
+      fg(this.theme.secondary)(` ${this.field} `),
+      fg(this.theme.primary)(value),
+      fg(this.theme.dim)(" ▴"),
+    ])
+  }
+
+  protected override onResize(width: number, height: number): void {
+    super.onResize(width, height)
+    this.refresh()
+  }
+}
+
+class ConfigurationSelector extends BoxRenderable {
+  readonly menuRows: OptionRow[] = []
+  readonly separator: TextRenderable
+  private readonly buttonText: TextRenderable
+  private readonly panel: ConfigurationPanel
+  private theme: EditorTheme
+
+  constructor(
+    ctx: RenderContext,
+    panel: ConfigurationPanel,
+    theme: EditorTheme,
+    maximumRows: number,
+  ) {
+    super(ctx, {
+      id: "configuration-selector",
+      position: "absolute",
+      left: 0,
+      bottom: 0,
+      width: "50%",
+      height: 4,
+      flexDirection: "column",
+      flexShrink: 0,
+      border: true,
+      borderColor: theme.divider,
+      focusedBorderColor: theme.focus,
+      backgroundColor: theme.background,
+      focusable: true,
+      shouldFill: true,
+      zIndex: 3,
+      visible: false,
+    })
+    this.panel = panel
+    this.theme = theme
+
+    for (let rowIndex = 0; rowIndex < maximumRows; rowIndex += 1) {
+      const row = new BoxRenderable(ctx, {
+        id: `configuration-option-${rowIndex}`,
+        width: "100%",
+        height: 1,
+        flexShrink: 0,
+        backgroundColor: theme.background,
+        visible: false,
+      })
+      const text = new TextRenderable(ctx, {
+        width: "100%",
+        height: 1,
+        content: "",
+        fg: theme.secondary,
+        bg: theme.background,
+        selectable: false,
+        truncate: true,
+      })
+      row.add(text)
+      row.onMouseDown = (event) => {
+        if (event.button !== 0 || !row.visible) return
+        this.panel.chooseVisibleRow(rowIndex)
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      this.add(row)
+      this.menuRows.push({ box: row, text })
+    }
+
+    this.separator = new TextRenderable(ctx, {
+      id: "configuration-selector-divider",
+      width: "100%",
+      height: 1,
+      flexShrink: 0,
+      content: "",
+      fg: theme.divider,
+      bg: theme.background,
+      selectable: false,
+      truncate: true,
+    })
+    this.buttonText = new TextRenderable(ctx, {
+      id: "configuration-selector-value",
+      width: "100%",
+      height: 1,
+      flexShrink: 0,
+      content: "",
+      fg: theme.primary,
+      bg: theme.background,
+      selectable: false,
+      truncate: true,
+    })
+    this.add(this.separator)
+    this.add(this.buttonText)
+    this.onMouseDown = (event) => {
+      if (event.button !== 0) return
+      this.focus()
+      event.preventDefault()
+      event.stopPropagation()
+    }
+  }
+
   override focus(): void {
     super.focus()
-    this.panel.open(this.field)
-    this.refresh()
+    this.refreshChrome()
   }
 
   override blur(): void {
     super.blur()
-    this.refresh()
+    this.refreshChrome()
   }
 
   override handleKeyPress(key: KeyEvent): boolean {
@@ -99,7 +222,7 @@ class ConfigurationButton extends BoxRenderable {
       return true
     }
     if (name === "tab") {
-      this.panel.focusOther(this.field)
+      this.panel.focusOther()
       return true
     }
     return false
@@ -107,21 +230,32 @@ class ConfigurationButton extends BoxRenderable {
 
   setTheme(theme: EditorTheme): void {
     this.theme = theme
+    this.backgroundColor = theme.background
     this.borderColor = theme.divider
     this.focusedBorderColor = theme.focus
-    this.backgroundColor = theme.background
-    this.text.bg = theme.background
-    this.refresh()
+    this.separator.fg = theme.divider
+    this.separator.bg = theme.background
+    this.buttonText.bg = theme.background
+    for (const row of this.menuRows) {
+      row.box.backgroundColor = theme.background
+      row.text.bg = theme.background
+    }
+    this.refreshChrome()
   }
 
-  refresh(): void {
-    if (this.text.isDestroyed) return
-    const rawValue = this.panel.configuration[this.field] ?? "unavailable"
-    const marker = this.focused ? "▎" : " "
-    const value = fitValue(rawValue, Math.max(1, this.width - this.field.length - 7))
-    this.text.content = new StyledText([
-      fg(this.focused ? this.theme.focus : this.theme.dim)(marker),
-      fg(this.theme.secondary)(` ${this.field} `),
+  refreshChrome(): void {
+    if (this.buttonText.isDestroyed) return
+    this.separator.content = "─".repeat(Math.max(0, this.width - 2))
+    const field = this.panel.activeField
+    if (field === null) {
+      this.buttonText.content = ""
+      return
+    }
+    const rawValue = this.panel.configuration[field] ?? "unavailable"
+    const value = fitValue(rawValue, Math.max(1, this.width - field.length - 7))
+    this.buttonText.content = new StyledText([
+      fg(this.focused ? this.theme.focus : this.theme.dim)(this.focused ? "▎" : " "),
+      fg(this.theme.secondary)(` ${field} `),
       this.focused ? bold(fg(this.theme.primary)(value)) : fg(this.theme.primary)(value),
       fg(this.theme.dim)(" ▴"),
     ])
@@ -129,16 +263,16 @@ class ConfigurationButton extends BoxRenderable {
 
   protected override onResize(width: number, height: number): void {
     super.onResize(width, height)
-    this.refresh()
+    this.refreshChrome()
   }
 }
 
 export class ConfigurationPanel extends BoxRenderable {
   readonly modelButton: ConfigurationButton
   readonly effortButton: ConfigurationButton
-  private readonly menu: BoxRenderable
+  readonly backdrop: BoxRenderable
+  readonly selector: ConfigurationSelector
   private readonly controls: BoxRenderable
-  private readonly menuRows: Array<{ box: BoxRenderable; text: TextRenderable }> = []
   private readonly visibleOptionIndices: number[] = []
   private readonly options: ConfigurationPanelOptions
   private theme: EditorTheme
@@ -154,76 +288,59 @@ export class ConfigurationPanel extends BoxRenderable {
       id: "configuration",
       width: "100%",
       height: 3,
-      flexDirection: "column",
       flexShrink: 0,
       backgroundColor: options.theme.background,
+      overflow: "visible",
     })
     this.options = options
     this.theme = options.theme
     this.maximumHeight = Math.max(0, Math.trunc(ctx.height))
 
-    this.menu = new BoxRenderable(ctx, {
-      id: "configuration-menu",
+    this.backdrop = new BoxRenderable(ctx, {
+      id: "configuration-backdrop",
+      position: "absolute",
+      left: 0,
+      bottom: 0,
       width: "100%",
-      height: 0,
-      flexDirection: "column",
-      flexShrink: 0,
-      border: true,
-      borderColor: options.theme.divider,
-      backgroundColor: options.theme.background,
+      height: this.maximumHeight,
+      backgroundColor: options.theme.backdrop,
       shouldFill: true,
+      zIndex: 1,
       visible: false,
     })
+    this.backdrop.onMouseDown = (event) => {
+      if (event.button !== 0) return
+      this.closeAndFocusDocument()
+      event.preventDefault()
+      event.stopPropagation()
+    }
+
     this.controls = new BoxRenderable(ctx, {
       id: "configuration-controls",
+      position: "absolute",
+      left: 0,
+      bottom: 0,
       width: "100%",
       height: 3,
       flexDirection: "row",
-      flexShrink: 0,
       backgroundColor: options.theme.background,
+      zIndex: 2,
     })
     this.modelButton = new ConfigurationButton(ctx, "model", this, options.theme)
     this.effortButton = new ConfigurationButton(ctx, "effort", this, options.theme)
+    this.controls.add(this.modelButton)
+    this.controls.add(this.effortButton)
 
     const maximumRows = Math.max(
       options.models.length,
       0,
       ...options.models.map((model) => model.efforts.length),
     )
-    for (let rowIndex = 0; rowIndex < maximumRows; rowIndex += 1) {
-      const row = new BoxRenderable(ctx, {
-        id: `configuration-option-${rowIndex}`,
-        width: "100%",
-        height: 1,
-        flexShrink: 0,
-        backgroundColor: options.theme.background,
-        visible: false,
-      })
-      const text = new TextRenderable(ctx, {
-        width: "100%",
-        height: 1,
-        content: "",
-        fg: options.theme.secondary,
-        bg: options.theme.background,
-        selectable: false,
-        truncate: true,
-      })
-      row.add(text)
-      row.onMouseDown = (event) => {
-        if (event.button !== 0 || !row.visible) return
-        const optionIndex = this.visibleOptionIndices[rowIndex]
-        if (optionIndex !== undefined) this.choose(optionIndex)
-        event.preventDefault()
-        event.stopPropagation()
-      }
-      this.menu.add(row)
-      this.menuRows.push({ box: row, text })
-    }
+    this.selector = new ConfigurationSelector(ctx, this, options.theme, maximumRows)
 
-    this.controls.add(this.modelButton)
-    this.controls.add(this.effortButton)
-    this.add(this.menu)
+    this.add(this.backdrop)
     this.add(this.controls)
+    this.add(this.selector)
   }
 
   get activeField(): ConfigurationField | null {
@@ -235,7 +352,7 @@ export class ConfigurationPanel extends BoxRenderable {
   }
 
   get menuVisible(): boolean {
-    return this.menu.visible
+    return this.selector.visible && this.visibleMenuRows > 0
   }
 
   get optionCount(): number {
@@ -243,7 +360,11 @@ export class ConfigurationPanel extends BoxRenderable {
   }
 
   get menuHeight(): number {
-    return this.menu.visible ? this.visibleMenuRows + 2 : 0
+    return this.menuVisible ? this.visibleMenuRows + 1 : 0
+  }
+
+  get separator(): TextRenderable {
+    return this.selector.separator
   }
 
   setConfiguration(model: string | null, effort: string | null): void {
@@ -253,7 +374,6 @@ export class ConfigurationPanel extends BoxRenderable {
       this.highlighted = selected < 0 ? 0 : selected
     }
     this.refreshMenu()
-    this.updateHeight()
     this.modelButton.refresh()
     this.effortButton.refresh()
   }
@@ -261,19 +381,19 @@ export class ConfigurationPanel extends BoxRenderable {
   setTheme(theme: EditorTheme): void {
     this.theme = theme
     this.backgroundColor = theme.background
+    this.backdrop.backgroundColor = theme.backdrop
     this.controls.backgroundColor = theme.background
-    this.menu.backgroundColor = theme.background
-    this.menu.borderColor = theme.divider
     this.modelButton.setTheme(theme)
     this.effortButton.setTheme(theme)
+    this.selector.setTheme(theme)
     this.refreshMenu()
   }
 
   resizeForSize(width: number, height: number): void {
     void width
     this.maximumHeight = Math.max(0, Math.trunc(height))
+    this.backdrop.height = this.maximumHeight
     this.refreshMenu()
-    this.updateHeight()
   }
 
   open(field: ConfigurationField): void {
@@ -282,19 +402,21 @@ export class ConfigurationPanel extends BoxRenderable {
     this.highlighted = selected < 0 ? 0 : selected
     this.scrollOffset = 0
     this.refreshMenu()
-    this.updateHeight()
+    if (this.selector.visible) this.selector.focus()
     this.modelButton.refresh()
     this.effortButton.refresh()
   }
 
   closeMenu(): void {
-    if (this.active === null && !this.menu.visible) return
+    if (this.active === null && !this.selector.visible && !this.backdrop.visible) return
+    if (this.selector.focused) this.selector.blur()
     this.active = null
-    this.menu.visible = false
+    this.backdrop.visible = false
+    this.selector.visible = false
     this.visibleMenuRows = 0
     this.visibleOptionIndices.length = 0
     this.refreshMenuRows([])
-    this.updateHeight()
+    this.selector.refreshChrome()
     this.modelButton.refresh()
     this.effortButton.refresh()
   }
@@ -305,21 +427,19 @@ export class ConfigurationPanel extends BoxRenderable {
   }
 
   focusModel(): void {
-    this.modelButton.focus()
+    this.open("model")
   }
 
-  focusOther(field: ConfigurationField): void {
-    if (field === "model") this.effortButton.focus()
-    else this.modelButton.focus()
+  focusOther(): void {
+    this.open(this.active === "model" ? "effort" : "model")
   }
 
   ownsFocus(renderable: Renderable | null): boolean {
-    return renderable === this.modelButton || renderable === this.effortButton
+    return renderable === this.selector
   }
 
   releaseFocus(): void {
-    if (this.modelButton.focused) this.modelButton.blur()
-    if (this.effortButton.focused) this.effortButton.blur()
+    if (this.selector.focused) this.selector.blur()
     this.closeMenu()
   }
 
@@ -336,6 +456,11 @@ export class ConfigurationPanel extends BoxRenderable {
 
   chooseHighlighted(): void {
     this.choose(this.highlighted)
+  }
+
+  chooseVisibleRow(rowIndex: number): void {
+    const optionIndex = this.visibleOptionIndices[rowIndex]
+    if (optionIndex !== undefined) this.choose(optionIndex)
   }
 
   choose(index: number): void {
@@ -358,7 +483,7 @@ export class ConfigurationPanel extends BoxRenderable {
   }
 
   optionRow(rowIndex: number): BoxRenderable | null {
-    return this.menuRows[rowIndex]?.box ?? null
+    return this.selector.menuRows[rowIndex]?.box ?? null
   }
 
   private fieldOptions(): readonly string[] {
@@ -371,14 +496,16 @@ export class ConfigurationPanel extends BoxRenderable {
 
   private refreshMenu(): void {
     const options = this.fieldOptions()
-    const rowCapacity = Math.max(0, this.maximumHeight - 5)
+    const rowCapacity = Math.max(0, this.maximumHeight - 4)
     this.visibleMenuRows = this.active === null ? 0 : Math.min(options.length, rowCapacity)
-    this.menu.visible = this.visibleMenuRows > 0
-    this.menu.height = this.menuHeight
+    const open = this.visibleMenuRows > 0 && this.active !== null
+    this.backdrop.visible = open
+    this.selector.visible = open
 
-    if (this.visibleMenuRows === 0) {
+    if (!open) {
       this.visibleOptionIndices.length = 0
       this.refreshMenuRows([])
+      this.selector.refreshChrome()
       return
     }
 
@@ -393,13 +520,17 @@ export class ConfigurationPanel extends BoxRenderable {
     for (let index = 0; index < visible.length; index += 1) {
       this.visibleOptionIndices.push(this.scrollOffset + index)
     }
+
+    this.selector.left = this.active === "model" ? 0 : "50%"
+    this.selector.height = this.visibleMenuRows + 4
     this.refreshMenuRows(visible)
+    this.selector.refreshChrome()
   }
 
   private refreshMenuRows(visible: readonly string[]): void {
-    for (const [rowIndex, row] of this.menuRows.entries()) {
+    for (const [rowIndex, row] of this.selector.menuRows.entries()) {
       const value = visible[rowIndex]
-      row.box.visible = this.menu.visible && value !== undefined
+      row.box.visible = this.selector.visible && value !== undefined
       row.box.backgroundColor = this.theme.background
       row.text.bg = this.theme.background
       if (value === undefined) {
@@ -413,10 +544,6 @@ export class ConfigurationPanel extends BoxRenderable {
         highlighted ? bold(fg(this.theme.primary)(value)) : fg(this.theme.secondary)(value),
       ])
     }
-  }
-
-  private updateHeight(): void {
-    this.height = 3 + this.menuHeight
   }
 }
 

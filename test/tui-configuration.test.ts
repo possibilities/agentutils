@@ -24,7 +24,7 @@ const MODELS: CatalogModel[] = [
   },
 ]
 
-test("outlined controls fill the width and open upward by reflowing the Document", async () => {
+test("half-width selectors fly over the Document with a modal backdrop and shared divider", async () => {
   const setup = await createTestRenderer({
     width: 80,
     height: 24,
@@ -75,12 +75,27 @@ test("outlined controls fill the width and open upward by reflowing the Document
     expect(panel.activeField).toBe("model")
     expect(panel.menuVisible).toBe(true)
     expect(panel.optionCount).toBe(3)
-    expect(panel.menuHeight).toBe(5)
-    expect(document.height).toBe(collapsedDocumentHeight - 5)
+    expect(panel.menuHeight).toBe(4)
+    expect(document.height).toBe(collapsedDocumentHeight)
+    expect(panel.height).toBe(3)
+    expect(panel.selector.screenX).toBe(panel.modelButton.screenX)
+    expect(panel.selector.width).toBe(panel.modelButton.width)
     expect(panel.optionRow(0)!.screenY).toBeLessThan(panel.modelButton.screenY)
+    expect(panel.separator.screenY).toBe(panel.modelButton.screenY)
+    expect(panel.backdrop.visible).toBe(true)
+    expect(panel.backdrop.screenY).toBe(0)
+    expect(panel.backdrop.height).toBe(24)
+    expect(panel.backdrop.backgroundColor.toInts()).toEqual([0, 0, 0, 51])
+    expect(renderedLine(setup, panel.separator.screenY)).toBe(
+      `│${"─".repeat(38)}│┌${"─".repeat(38)}┐`,
+    )
+    expect(panel.separator.fg.toInts()).toEqual(theme.divider.toInts())
 
-    panel.closeAndFocusDocument()
+    await setup.mockMouse.click(document.screenX + 2, document.screenY + 1)
     await setup.renderOnce()
+    expect(panel.menuVisible).toBe(false)
+    expect(panel.backdrop.visible).toBe(false)
+    expect(setup.renderer.currentFocusedRenderable).toBe(document)
     expect(document.height).toBe(collapsedDocumentHeight)
   } finally {
     setup.renderer.destroy()
@@ -144,8 +159,13 @@ test("controls, options, keyboard selection, and exit remain directly operable",
     setup.mockInput.pressTab()
     await setup.flush()
     expect(panel.activeField).toBe("effort")
-    expect(setup.renderer.currentFocusedRenderable).toBe(panel.effortButton)
+    expect(setup.renderer.currentFocusedRenderable).toBe(panel.selector)
     expect(panel.optionCount).toBe(6)
+    expect(panel.selector.screenX).toBe(panel.effortButton.screenX)
+    expect(panel.selector.width).toBe(panel.effortButton.width)
+    expect(renderedLine(setup, panel.separator.screenY)).toBe(
+      `┌${"─".repeat(38)}┐│${"─".repeat(38)}│`,
+    )
 
     setup.mockInput.pressArrow("down")
     setup.mockInput.pressEnter()
@@ -210,7 +230,7 @@ test("Configuration focus is fxnk-styled and suppresses the Document cursor", as
 
     await setup.mockMouse.click(panel.modelButton.screenX + 2, panel.modelButton.screenY + 1)
     await setup.renderOnce()
-    expect(setup.renderer.currentFocusedRenderable).toBe(panel.modelButton)
+    expect(setup.renderer.currentFocusedRenderable).toBe(panel.selector)
     expect(editor.showCursor).toBe(false)
     expect(setup.renderer.getCursorState().visible).toBe(false)
 
@@ -224,6 +244,7 @@ test("Configuration focus is fxnk-styled and suppresses the Document cursor", as
 
     const label = visibleSpans.find((span) => span.text.includes(" model "))
     expect(label?.fg.toInts()).toEqual(theme.secondary.toInts())
+    expect(panel.separator.fg.toInts()).toEqual(theme.divider.toInts())
   } finally {
     setup.renderer.destroy()
   }
@@ -270,10 +291,14 @@ test("a shallow Surface keeps controls visible and scrolls a physically constrai
     await setup.renderOnce()
     panel.focusModel()
     await setup.renderOnce()
-    expect(panel.height).toBe(6)
+    expect(panel.height).toBe(3)
+    expect(panel.selector.height).toBe(6)
     expect(panel.menuHeight).toBe(3)
     expect(panel.optionRow(0)?.visible).toBe(true)
-    expect(panel.optionRow(1)?.visible).toBe(false)
+    expect(panel.optionRow(1)?.visible).toBe(true)
+    expect(panel.optionRow(2)?.visible).toBe(false)
+    expect(document.height).toBe(3)
+    expect(panel.selector.screenY).toBe(0)
     expect(panel.modelButton.screenY + panel.modelButton.height).toBe(6)
 
     setup.mockInput.pressArrow("down")
@@ -288,6 +313,13 @@ test("a shallow Surface keeps controls visible and scrolls a physically constrai
 
 function visibleText(setup: Awaited<ReturnType<typeof createTestRenderer>>): string {
   return setup.captureSpans().lines.flatMap((line) => line.spans.map((span) => span.text)).join("\n")
+}
+
+function renderedLine(
+  setup: Awaited<ReturnType<typeof createTestRenderer>>,
+  row: number,
+): string {
+  return setup.captureSpans().lines[row]?.spans.map((span) => span.text).join("") ?? ""
 }
 
 function isGrayscale(color: RGBA): boolean {

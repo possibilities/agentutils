@@ -76,9 +76,9 @@ async function runDemo(): Promise<void> {
       "Draft a prompt that asks an agent to review a release candidate. Ask it to inspect implementation, " +
       "tests, release notes, and operator behavior; identify regressions and missing verification; then report " +
       "findings with evidence. Distinguish confirmed failures from suspicions.\n\n" +
-      "The selector menu below participates in layout, so opening it makes this Document shorter instead of " +
-      "covering the text. This longer sample exposes wrapping and viewport pressure at narrow widths and " +
-      "shallow heights, showing which lines remain visible as controls expand.",
+      "The selector menu below is a flyover, so opening it covers this Document without changing its layout. " +
+      "The remaining Surface receives the same modal backdrop used by fmx. This longer sample exposes wrapping " +
+      "and flyover coverage at narrow widths and shallow heights.",
     fg: theme.primary,
     bg: theme.background,
     selectable: false,

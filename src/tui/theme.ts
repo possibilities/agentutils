@@ -11,6 +11,7 @@ export type EditorTheme = {
   dim: RGBA
   divider: RGBA
   surface: RGBA
+  backdrop: RGBA
   focus: RGBA
   error: RGBA
   selectionBackground: RGBA
@@ -49,6 +50,7 @@ const THEMES: Readonly<Record<ThemeMode, EditorTheme>> = {
     dim: RGBA.fromHex("#8a8a8a"),
     divider: RGBA.fromHex("#585858"),
     surface: RGBA.fromHex("#303030"),
+    backdrop: RGBA.fromHex("#00000033"),
     focus: RGBA.fromIndex(4),
     error: RGBA.fromIndex(1),
     selectionBackground: RGBA.fromHex("#eeeeee"),
@@ -63,6 +65,7 @@ const THEMES: Readonly<Record<ThemeMode, EditorTheme>> = {
     dim: RGBA.fromHex("#9e9e9e"),
     divider: RGBA.fromHex("#bcbcbc"),
     surface: RGBA.fromHex("#e4e4e4"),
+    backdrop: RGBA.fromHex("#00000033"),
     focus: RGBA.fromIndex(4),
     error: RGBA.fromIndex(1),
     selectionBackground: RGBA.fromHex("#262626"),

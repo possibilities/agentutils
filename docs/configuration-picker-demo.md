@@ -3,13 +3,14 @@
 This development-only OpenTUI demo exercises the production outlined-split
 Configuration picker against a fixed sample Catalog. Two three-row bordered
 controls share the full width. The sample Document is deliberately long enough
-to expose wrapping and viewport pressure at narrow widths and shallow heights.
+to expose wrapping and flyover coverage at narrow widths and shallow heights.
 
-The full-width option list opens immediately above the controls and
-participates in flex layout, so it shortens the Document instead of covering
-it. A control takes focus when clicked; every option is also clickable. Arrow
-keys move the highlighted option, Enter chooses it, Tab changes field, and
-Escape returns focus to the Document.
+The active option list opens immediately above its half-width control as one
+continuous flyover. A dim internal divider separates options from the control.
+The flyover covers the Document without resizing it, while the remaining
+Surface receives fmx's modal backdrop. A control takes focus when clicked;
+every option is also clickable. Arrow keys move the highlighted option, Enter
+chooses it, Tab changes field, and Escape returns focus to the Document.
 
 Run the demo from the repository:
 

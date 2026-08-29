@@ -64,6 +64,7 @@ describe("fxnk theme contract", () => {
     }
     for (const mode of ["dark", "light"] as const) {
       expect(themeFor(mode).background.intent).toBe("default")
+      expect(themeFor(mode).backdrop.toInts()).toEqual([0, 0, 0, 51])
       expect(themeFor(mode).focus).toMatchObject({ intent: "indexed", slot: 4 })
       expect(themeFor(mode).error).toMatchObject({ intent: "indexed", slot: 1 })
     }
