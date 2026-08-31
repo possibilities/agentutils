@@ -25,6 +25,7 @@ export interface AgentContract {
     mutates: boolean
     arguments: unknown[]
     guidance?: string
+    blocking?: boolean
   }>
 }
 
@@ -45,6 +46,7 @@ export function buildContract(): AgentContract {
         audience: "operator",
         mutates: true,
         guidance: `A singleton collaborative Document Surface. A human runs this to open the TUI; agent control is available only through MCP at ${MCP_URL}. It takes no arguments — no paths, no control commands — and there is no automation surface beyond MCP.`,
+        blocking: true,
         arguments: [],
       },
       {
