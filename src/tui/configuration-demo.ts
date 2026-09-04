@@ -77,7 +77,7 @@ async function runDemo(): Promise<void> {
       "tests, release notes, and operator behavior; identify regressions and missing verification; then report " +
       "findings with evidence. Distinguish confirmed failures from suspicions.\n\n" +
       "The selector menu below is a flyover, so opening it covers this Document without changing its layout. " +
-      "The remaining Surface receives the same modal backdrop used by fmx. This longer sample exposes wrapping " +
+      "The remaining Surface receives the same modal backdrop used by smolmux. This longer sample exposes wrapping " +
       "and flyover coverage at narrow widths and shallow heights.",
     fg: theme.primary,
     bg: theme.background,

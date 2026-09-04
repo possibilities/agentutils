@@ -159,7 +159,7 @@ test("readline transpose and application undo/redo chords remain wired", async (
   })
 })
 
-test("ctrl+c requires a second press inside the fmx confirmation window", async () => {
+test("ctrl+c requires a second press inside the smolmux confirmation window", async () => {
   expect(EXIT_CONFIRMATION_TIMEOUT_MS).toBe(2_000)
   const armed: boolean[] = []
   let quits = 0
