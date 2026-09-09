@@ -1,7 +1,11 @@
 # AgentUtils agent guidance
 
-Read `CONTEXT.md`, `README.md`, and the ADRs in `docs/adr/` before changing
+Read [CONTEXT.md](CONTEXT.md), [README.md](README.md), and the [decision log](docs/adr/README.md) before changing
 the Surface or its MCP protocol.
+
+Current interaction details live in [README: Human Surface](README.md#human-surface).
+Keep the decision history in ADRs, using dated amendments or successors when
+a choice changes instead of silently replacing the earlier rationale.
 
 ## Product contract
 
